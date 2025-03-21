@@ -1,0 +1,91 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <meta charset="UTF-8" />
+    <meta http-equiv="X-UA-Compatible" content="IE=Edge" />
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Assistant IA pour Email</title>
+
+    <!-- Office JavaScript API -->
+    <script type="text/javascript" src="https://appsforoffice.microsoft.com/lib/1/hosted/office.js"></script>
+
+   <!-- For more information on Fluent UI, visit https://developer.microsoft.com/fluentui. -->
+    <link rel="stylesheet" href="https://res-1.cdn.office.net/files/fabric-cdn-prod_20230815.002/office-ui-fabric-core/11.1.0/css/fabric.min.css"/>
+
+    <!-- Template styles -->
+    <link href="taskpane.css" rel="stylesheet" type="text/css" />
+</head>
+
+<body class="ms-font-l ms-landing-page">
+  <main class="ms-landing-page__main">
+    <section class="ms-landing-page__content ms-font-m ms-fontColor-neutralPrimary">
+      <div class="header">
+        <h1 class="ms-font-xxl">Assistant IA pour Email</h1>
+        <p class="ms-font-m">Analysez et répondez à vos emails avec l'aide de l'IA</p>
+      </div>
+      
+      <div class="api-key-section">
+        <div class="ms-TextField">
+          <label class="ms-Label">Clé API Mistral</label>
+          <input class="ms-TextField-field" id="mistral-api-key" type="password" placeholder="Entrez votre clé API Mistral">
+          <span class="ms-TextField-description">Obtenez votre clé API sur <a href="https://console.mistral.ai/" target="_blank">Mistral AI Console</a></span>
+        </div>
+        <button class="ms-Button ms-Button--primary" id="save-api-key">
+          <span class="ms-Button-label">Enregistrer la clé API</span>
+        </button>
+      </div>
+      
+      <div id="ai-container" style="display: none;">
+        <div class="ms-TextField">
+          <label class="ms-Label">Posez une question sur cet email</label>
+          <textarea class="ms-TextField-field" id="ai-prompt" rows="3" placeholder="Exemple: Pouvez-vous résumer cet email? Quelle est l'action requise?"></textarea>
+        </div>
+        
+        <button class="ms-Button ms-Button--primary action-button" id="ai-submit">
+          <span class="ms-Button-icon"><i class="ms-Icon ms-Icon--Send"></i></span>
+          <span class="ms-Button-label">Demander à l'IA</span>
+        </button>
+        
+        <div class="response-container">
+          <div id="ai-response" style="display: none;">
+            <div class="response-header">
+              <span class="ms-font-m ms-fontWeight-semibold">Réponse de l'IA</span>
+            </div>
+            <div class="response-content"></div>
+          </div>
+          
+          <div id="ai-loading" style="display: none;">
+            <div class="ms-Spinner ms-Spinner--large"></div>
+            <div class="ms-font-m">Traitement de votre demande...</div>
+          </div>
+        </div>
+        
+        <button class="ms-Button ms-Button--primary action-button" id="insert-ai-response" style="display: none;">
+          <span class="ms-Button-icon"><i class="ms-Icon ms-Icon--Add"></i></span>
+          <span class="ms-Button-label">Insérer la réponse dans l'email</span>
+        </button>
+      </div>
+      
+      <div id="error-display" style="display: none;" class="ms-MessageBar ms-MessageBar--error">
+        <div class="ms-MessageBar-content">
+          <div class="ms-MessageBar-icon">
+            <i class="ms-Icon ms-Icon--Error"></i>
+          </div>
+          <div class="ms-MessageBar-text" id="error-message"></div>
+        </div>
+      </div>
+    </section>
+  </main>
+  <footer class="ms-landing-page__footer">
+    <div class="ms-landing-page__footer--left">
+      <p class="ms-font-s ms-fontColor-neutralSecondary">© 2024 Assistant IA pour Email</p>
+    </div>
+  </footer>
+  <script type="text/javascript" src="../../node_modules/jquery/dist/jquery.js"></script>
+  <script type="text/javascript" src="../helpers/addin-config.js"></script>
+  <script type="text/javascript" src="../helpers/mistral-api.js"></script>
+  <script type="text/javascript" src="taskpane.js"></script>
+</body>
+
+</html>

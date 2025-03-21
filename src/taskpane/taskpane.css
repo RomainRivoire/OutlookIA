@@ -1,0 +1,167 @@
+html,
+body {
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  padding: 0;
+  overflow: auto;
+  font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+}
+
+body {
+  position: relative;
+  font-size: 16px;
+  background-color: #f9f9f9;
+}
+
+main {
+  height: 100%;
+  overflow-y: auto;
+}
+
+.header {
+  text-align: center;
+  margin-bottom: 20px;
+  padding: 15px 0;
+  border-bottom: 1px solid #e0e0e0;
+}
+
+.header h1 {
+  margin: 0;
+  color: #0078d4;
+}
+
+.header p {
+  margin: 5px 0 0 0;
+  color: #666;
+}
+
+.api-key-section {
+  background-color: #f0f8ff;
+  padding: 15px;
+  border-radius: 4px;
+  margin-bottom: 20px;
+  border: 1px solid #d0e7ff;
+}
+
+.ms-TextField {
+  margin-bottom: 15px;
+}
+
+.ms-TextField-field {
+  width: 100%;
+  padding: 8px;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+  font-size: 14px;
+}
+
+textarea.ms-TextField-field {
+  resize: vertical;
+  min-height: 80px;
+}
+
+.ms-TextField-description {
+  font-size: 12px;
+  color: #666;
+  margin-top: 5px;
+  display: block;
+}
+
+.ms-Button {
+  margin-top: 10px;
+  padding: 8px 16px;
+  border-radius: 4px;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s ease;
+}
+
+.ms-Button--primary {
+  background-color: #0078d4;
+  color: white;
+  border: none;
+}
+
+.ms-Button--primary:hover {
+  background-color: #106ebe;
+}
+
+.ms-Button-icon {
+  margin-right: 8px;
+}
+
+.action-button {
+  width: 100%;
+  margin: 15px 0;
+  padding: 10px;
+}
+
+#save-api-key {
+  width: 100%;
+}
+
+.response-container {
+  margin-top: 20px;
+}
+
+#ai-response {
+  border: 1px solid #e0e0e0;
+  border-radius: 4px;
+  overflow: hidden;
+  background-color: white;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
+}
+
+.response-header {
+  background-color: #f3f3f3;
+  padding: 10px 15px;
+  border-bottom: 1px solid #e0e0e0;
+}
+
+.response-content {
+  padding: 15px;
+  min-height: 100px;
+  max-height: 300px;
+  overflow-y: auto;
+  line-height: 1.5;
+}
+
+#ai-loading {
+  text-align: center;
+  margin: 30px 0;
+}
+
+#error-display {
+  margin: 15px 0;
+  border-radius: 4px;
+}
+
+.ms-landing-page {
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
+}
+
+.ms-landing-page__main {
+  flex: 1;
+}
+
+.ms-landing-page__content {
+  padding: 20px;
+}
+
+.ms-landing-page__footer {
+  background-color: #f3f3f3;
+  padding: 10px 20px;
+  border-top: 1px solid #e0e0e0;
+  text-align: center;
+}
+
+.ms-landing-page__footer--left {
+  display: flex;
+  justify-content: center;
+}
+

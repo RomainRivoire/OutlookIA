@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+  <meta charset="UTF-8" />
+  <meta http-equiv="X-UA-Compatible" content="IE=Edge" />
+  <title>Settings</title>
+
+  <!-- Office JavaScript API -->
+  <script type="text/javascript" src="https://appsforoffice.microsoft.com/lib/1/hosted/office.js"></script>
+
+  <!-- For more information on Fluent UI, visit https://developer.microsoft.com/fluentui. -->
+  <link rel="stylesheet" href="https://res-1.cdn.office.net/files/fabric-cdn-prod_20230815.002/office-ui-fabric-core/11.1.0/css/fabric.min.css"/>
+
+  <!-- Template styles -->
+  <link href="dialog.css" rel="stylesheet" type="text/css" />
+</head>
+
+<body class="ms-font-l">
+  <main>
+    <section class="ms-font-m ms-fontColor-neutralPrimary">
+      <div class="not-configured-warning ms-MessageBar ms-MessageBar--warning">
+        <div class="ms-MessageBar-content">
+          <div class="ms-MessageBar-icon">
+            <i class="ms-Icon ms-Icon--Info"></i>
+          </div>
+          <div class="ms-MessageBar-text">
+            Please configure your Mistral API key to use the AI Assistant.
+          </div>
+        </div>
+      </div>
+      <div class="ms-font-xxl">Settings</div>
+      <div class="ms-Grid">
+        <div class="ms-Grid-row">
+          <div class="ms-TextField">
+            <label class="ms-Label">Mistral API Key</label>
+            <input class="ms-TextField-field" id="mistral-api-key" type="password" value="" placeholder="Please enter your Mistral API key">
+            <span class="ms-TextField-description">Get your API key from <a href="https://console.mistral.ai/" target="_blank">Mistral AI Console</a></span>
+          </div>
+        </div>
+        <div class="error-display ms-Grid-row">
+          <div class="ms-font-l ms-fontWeight-semibold">An error occurred:</div>
+          <pre><code id="error-text"></code></pre>
+        </div>
+      </div>
+      <div class="ms-Dialog-actions">
+        <div class="ms-Dialog-actionsRight">
+          <button class="ms-Dialog-action ms-Button ms-Button--primary" id="settings-done">
+            <span class="ms-Button-label">Save</span>
+          </button>
+        </div>
+      </div>
+    </section>
+  </main>
+  <script type="text/javascript" src="../../node_modules/jquery/dist/jquery.js"></script>
+  <script type="text/javascript" src="../helpers/addin-config.js"></script>
+  <script type="text/javascript" src="dialog.js"></script>
+</body>
+
+</html>
+
