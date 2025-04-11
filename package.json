@@ -27,7 +27,9 @@
   },
   "dependencies": {
     "core-js": "^3.37.1",
+    "docxtemplater": "^3.60.2",
     "jquery": "^3.7.1",
+    "jszip": "^3.10.1",
     "regenerator-runtime": "^0.14.1",
     "showdown": "^2.1.0",
     "urijs": "^1.19.11"

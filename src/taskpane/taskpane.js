@@ -1,9 +1,14 @@
+/* eslint-disable office-addins/no-office-initialize */
+/* eslint-disable no-undef */
 (() => {
   /* global Office */
   /* global $ */
 
   let config;
   let aiResponse = "";
+  let generatedSubject = "";
+  let lastInsertedResponse = ""; // Pour suivre la dernière réponse insérée
+  const qaHistory = [];
 
   // Add the missing functions inside the scope
   function getEmailContent(callback) {
@@ -46,7 +51,7 @@
     // This depends on how you're storing configuration
     // Example implementation:
     try {
-      const savedConfig = Office.context.roamingSettings.get('mistralConfig');
+      const savedConfig = Office.context.roamingSettings.get("mistralConfig");
       return savedConfig ? JSON.parse(savedConfig) : {};
     } catch (e) {
       console.error("Erreur lors de la récupération de la configuration:", e);
@@ -56,21 +61,21 @@
 
   function setConfig(configObj, callback) {
     try {
-      Office.context.roamingSettings.set('mistralConfig', JSON.stringify(configObj));
+      Office.context.roamingSettings.set("mistralConfig", JSON.stringify(configObj));
       Office.context.roamingSettings.saveAsync((result) => {
         callback(result);
       });
     } catch (e) {
       callback({
         status: Office.AsyncResultStatus.Failed,
-        error: { message: e.message }
+        error: { message: e.message },
       });
     }
   }
 
   function callMistralAPI(apiKey, prompt, callback) {
     const requestUrl = "https://api.mistral.ai/v1/chat/completions";
-    
+
     const requestData = {
       model: "mistral-small-latest",
       messages: [
@@ -82,7 +87,7 @@
       temperature: 0.7,
       max_tokens: 1024,
     };
-    
+
     $.ajax({
       url: requestUrl,
       type: "POST",
@@ -103,7 +108,7 @@
       .fail((error) => {
         console.error("Erreur API Mistral:", error);
         let errorMessage = "Erreur lors de l'appel à l'API Mistral";
-        
+
         if (error.status === 401) {
           errorMessage = "Clé API invalide. Veuillez vérifier votre clé API Mistral.";
         } else if (error.responseJSON && error.responseJSON.error) {
@@ -111,7 +116,7 @@
         } else if (error.statusText) {
           errorMessage += ": " + error.statusText;
         }
-        
+
         callback(null, errorMessage);
       });
   }
@@ -121,43 +126,198 @@
     $("#error-display").show();
   }
 
+  // Fonction pour extraire l'objet généré de la réponse
+  function extractSubject(response) {
+    // Recherche d'un objet suggéré dans la réponse
+    const subjectPatterns = [
+      /Objet suggéré\s*:\s*"([^"]+)"/i,
+      /Objet suggéré\s*:\s*(.+?)(?:\n|$)/i,
+      /Objet\s*:\s*"([^"]+)"/i,
+      /Objet\s*:\s*(.+?)(?:\n|$)/i,
+      /Sujet suggéré\s*:\s*"([^"]+)"/i,
+      /Sujet suggéré\s*:\s*(.+?)(?:\n|$)/i,
+      /Sujet\s*:\s*"([^"]+)"/i,
+      /Sujet\s*:\s*(.+?)(?:\n|$)/i,
+    ];
+
+    for (const pattern of subjectPatterns) {
+      const match = response.match(pattern);
+      if (match && match[1]) {
+        return match[1].trim();
+      }
+    }
+
+    // Si aucun objet n'est trouvé, générer un objet par défaut
+    return "Réponse générée par IA";
+  }
+
+  // Fonction pour nettoyer la réponse avant insertion (supprimer l'objet suggéré)
+  function cleanResponseForInsertion(response) {
+    // Supprimer les lignes contenant des suggestions d'objet
+    let cleanedResponse = response
+      .replace(/Objet suggéré\s*:.*(\n|$)/gi, "")
+      .replace(/Sujet suggéré\s*:.*(\n|$)/gi, "")
+      .replace(/Objet\s*:.*(\n|$)/gi, "")
+      .replace(/Sujet\s*:.*(\n|$)/gi, "")
+      .trim();
+
+    // Supprimer les formules d'introduction courantes
+    cleanedResponse = cleanedResponse
+      .replace(
+        /^(Bien sûr|Voici|Certainement|Avec plaisir|D'accord|Bonjour|Salut|Je serais ravi)[,.]?\s*(voici|je vous propose|vous trouverez ci-dessous)?\s*(une réponse possible|une réponse|un exemple de réponse|ma réponse)[^:]*:/i,
+        ""
+      )
+      .replace(/^Voici ma réponse[^:]*:/i, "")
+      .replace(/^En réponse à votre demande[^:]*:/i, "")
+      .replace(/^Voici ce que vous pourriez répondre[^:]*:/i, "")
+      .trim();
+
+    // Supprimer les marqueurs de formatage
+    cleanedResponse = cleanedResponse
+      .replace(/^-{3,}$/gm, "") // Supprime les lignes contenant uniquement des tirets (---)
+      .replace(/^\*{3,}$/gm, "") // Supprime les lignes contenant uniquement des astérisques (***)
+      .trim();
+
+    // Supprimer les placeholders courants
+    cleanedResponse = cleanedResponse
+      .replace(/\[Votre Nom\]/gi, "")
+      .replace(/\[Votre Signature\]/gi, "")
+      .replace(/\[Nom\]/gi, "")
+      .replace(/\[Prénom\]/gi, "")
+      .replace(/\[Signature\]/gi, "")
+      .trim();
+
+    // Améliorer le formatage des sauts de ligne
+    cleanedResponse = cleanedResponse
+      .replace(/\n{3,}/g, "\n\n") // Remplace 3+ sauts de ligne par 2
+      .replace(/^\s+|\s+$/gm, ""); // Supprime les espaces en début et fin de ligne
+
+    // Assurer que les paragraphes sont bien séparés pour Outlook
+    cleanedResponse = cleanedResponse
+      .replace(/\n/g, "\r\n") // Utiliser le format Windows pour les sauts de ligne
+      .replace(/([.!?])\s*\r\n/g, "$1\r\n\r\n"); // Ajouter un saut de ligne supplémentaire après les fins de phrase suivies d'un saut de ligne
+
+    return cleanedResponse;
+  }
+
+  // Fonction pour définir l'objet du mail
+  function setEmailSubject(subject) {
+    try {
+      Office.context.mailbox.item.subject.setAsync(subject, (result) => {
+        if (result.status !== Office.AsyncResultStatus.Succeeded) {
+          showError("Impossible de définir l'objet: " + (result.error ? result.error.message : "Erreur inconnue"));
+        }
+      });
+    } catch (e) {
+      showError("Erreur lors de la définition de l'objet: " + e.message);
+    }
+  }
+
+  // Fonction pour remplacer la dernière insertion ou insérer une nouvelle réponse
+  function replaceOrInsertResponse(newResponse) {
+    try {
+      // Récupérer le contenu actuel du mail
+      Office.context.mailbox.item.body.getAsync(Office.CoercionType.Text, (result) => {
+        if (result.status !== Office.AsyncResultStatus.Succeeded) {
+          showError(
+            "Impossible de lire le contenu du mail: " + (result.error ? result.error.message : "Erreur inconnue")
+          );
+          return;
+        }
+
+        const currentBody = result.value;
+
+        // Si nous avons une dernière insertion et qu'elle est présente dans le corps du mail
+        if (lastInsertedResponse && currentBody.includes(lastInsertedResponse)) {
+          // Remplacer la dernière insertion par la nouvelle
+          const updatedBody = currentBody.replace(lastInsertedResponse, newResponse);
+
+          Office.context.mailbox.item.body.setAsync(
+            updatedBody,
+            { coercionType: Office.CoercionType.Text },
+            (result) => {
+              if (result.status !== Office.AsyncResultStatus.Succeeded) {
+                showError(
+                  "Impossible de mettre à jour la réponse: " + (result.error ? result.error.message : "Erreur inconnue")
+                );
+                return;
+              }
+
+              // Mettre à jour la référence à la dernière insertion
+              lastInsertedResponse = newResponse;
+            }
+          );
+        } else {
+          // Si pas de dernière insertion ou si elle n'est plus présente, insérer à la position actuelle
+          Office.context.mailbox.item.body.setSelectedDataAsync(
+            newResponse,
+            { coercionType: Office.CoercionType.Text },
+            (result) => {
+              if (result.status !== Office.AsyncResultStatus.Succeeded) {
+                showError(
+                  "Impossible d'insérer la réponse: " + (result.error ? result.error.message : "Erreur inconnue")
+                );
+                return;
+              }
+
+              // Mettre à jour la référence à la dernière insertion
+              lastInsertedResponse = newResponse;
+            }
+          );
+        }
+      });
+    } catch (e) {
+      showError("Erreur lors de l'insertion/remplacement de la réponse: " + e.message);
+    }
+  }
+
+  // Nouvelle fonction pour ajouter une paire question/réponse à l'historique
+  function addToQAHistory(question, response) {
+    // Ajouter à la fin du tableau pour garder la dernière question en bas (comme WhatsApp)
+    qaHistory.push({ question, response });
+
+    // Mettre à jour l'affichage
+    updateQAHistoryDisplay();
+  }
+
+  // Nouvelle fonction pour mettre à jour l'affichage de l'historique
+  function updateQAHistoryDisplay() {
+    const $qaHistory = $("#qa-history");
+    $qaHistory.empty();
+
+    // Parcourir l'historique et créer les éléments HTML
+    qaHistory.forEach((item) => {
+      const $qaItem = $(`
+        <div class="qa-item">
+          <div class="question-container">
+            <div class="question-header">Votre question:</div>
+            <p class="question-content">${item.question}</p>
+          </div>
+          <div class="response-container">
+            <div class="response-header">Réponse de l'IA:</div>
+            <div class="response-content">${item.response.replace(/\n/g, "<br>")}</div>
+          </div>
+        </div>
+      `);
+
+      $qaHistory.append($qaItem);
+    });
+
+    // Faire défiler vers le bas pour voir la dernière question/réponse
+    $(".conversation-container").scrollTop($(".conversation-container")[0].scrollHeight);
+  }
+
   Office.initialize = (reason) => {
     $(document).ready(() => {
       // Load config
       config = getConfig();
 
-      // If API key is already saved, show it in the input field and show AI container
-      if (config && config.mistralApiKey) {
-        $("#mistral-api-key").val(config.mistralApiKey);
-        $("#ai-container").show();
+      // Vérifier si la clé API est déjà configurée
+      if (!config || !config.mistralApiKey) {
+        // Si la clé n'est pas configurée, afficher un message d'erreur
+        showError("Clé API Mistral non configurée. Veuillez contacter votre administrateur.");
+        return;
       }
-
-      // Save API key button click handler
-      $("#save-api-key").on("click", () => {
-        const apiKey = $("#mistral-api-key").val().trim();
-
-        if (!apiKey) {
-          showError("Veuillez entrer votre clé API Mistral");
-          return;
-        }
-
-        // Save API key to config
-        config = config || {};
-        config.mistralApiKey = apiKey;
-
-        setConfig(config, (result) => {
-          if (result.status === Office.AsyncResultStatus.Failed) {
-            showError("Erreur lors de l'enregistrement de la clé API: " + result.error.message);
-            return;
-          }
-
-          // Show AI container
-          $("#ai-container").show();
-
-          // Hide error if any
-          $("#error-display").hide();
-        });
-      });
 
       // When AI submit button is clicked
       $("#ai-submit").on("click", () => {
@@ -167,19 +327,14 @@
           return;
         }
 
-        // Check if API key is available
-        if (!config || !config.mistralApiKey) {
-          showError("Veuillez d'abord enregistrer votre clé API Mistral");
-          return;
-        }
-
         // Hide any previous errors
         $("#error-display").hide();
 
+        // Hide action buttons
+        $("#action-buttons").hide();
+
         // Show loading spinner
         $("#ai-loading").show();
-        $("#ai-response").hide();
-        $("#insert-ai-response").hide();
 
         // Get email content
         getEmailContent((emailContent, error) => {
@@ -189,7 +344,7 @@
             return;
           }
 
-          // Create a prompt with email context
+          // Create a prompt with email context and ask for a subject
           const fullPrompt = `
             Je regarde un email avec les détails suivants:
             
@@ -200,6 +355,8 @@
             ${emailContent.body}
             
             ${prompt}
+            
+            En plus de répondre à ma question, pourriez-vous également suggérer un objet approprié pour ma réponse? Présentez-le sous la forme "Objet suggéré: [votre suggestion d'objet]" à la fin de votre réponse.
             
             Veuillez répondre en français.
           `;
@@ -217,10 +374,21 @@
 
             console.log("Réponse reçue de l'API Mistral");
 
-            // Display the response
-            $("#ai-response").show().find(".response-content").html(response.replace(/\n/g, "<br>"));
+            // Sauvegarder la réponse complète
             aiResponse = response;
-            $("#insert-ai-response").show();
+
+            // Extraire et sauvegarder l'objet suggéré
+            generatedSubject = extractSubject(response);
+            console.log("Objet généré:", generatedSubject);
+
+            // Ajouter la question et la réponse à l'historique
+            addToQAHistory(prompt, response);
+
+            // Vider la zone de prompt
+            $("#ai-prompt").val("");
+
+            // Afficher les boutons d'action
+            $("#action-buttons").show();
           });
         });
       });
@@ -228,15 +396,20 @@
       // When insert AI response button is clicked
       $("#insert-ai-response").on("click", () => {
         if (aiResponse) {
-          Office.context.mailbox.item.body.setSelectedDataAsync(
-            aiResponse,
-            { coercionType: Office.CoercionType.Text },
-            (result) => {
-              if (result.status === Office.AsyncResultStatus.Failed) {
-                showError("Impossible d'insérer la réponse de l'IA: " + result.error.message);
-              }
-            }
-          );
+          // Nettoyer la réponse avant insertion
+          const cleanedResponse = cleanResponseForInsertion(aiResponse);
+
+          // Remplacer la dernière insertion ou insérer une nouvelle réponse
+          replaceOrInsertResponse(cleanedResponse);
+        }
+      });
+
+      // When insert subject button is clicked
+      $("#insert-subject").on("click", () => {
+        if (generatedSubject) {
+          setEmailSubject(generatedSubject);
+        } else {
+          showError("Aucun objet n'a été généré");
         }
       });
     });

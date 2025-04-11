@@ -25,46 +25,52 @@
         <p class="ms-font-m">Analysez et répondez à vos emails avec l'aide de l'IA</p>
       </div>
       
-      <div class="api-key-section">
-        <div class="ms-TextField">
-          <label class="ms-Label">Clé API Mistral</label>
-          <input class="ms-TextField-field" id="mistral-api-key" type="password" placeholder="Entrez votre clé API Mistral">
-          <span class="ms-TextField-description">Obtenez votre clé API sur <a href="https://console.mistral.ai/" target="_blank">Mistral AI Console</a></span>
-        </div>
-        <button class="ms-Button ms-Button--primary" id="save-api-key">
-          <span class="ms-Button-label">Enregistrer la clé API</span>
-        </button>
-      </div>
+      <!-- Section de configuration de la clé API supprimée -->
       
-      <div id="ai-container" style="display: none;">
-        <div class="ms-TextField">
-          <label class="ms-Label">Posez une question sur cet email</label>
-          <textarea class="ms-TextField-field" id="ai-prompt" rows="3" placeholder="Exemple: Pouvez-vous résumer cet email? Quelle est l'action requise?"></textarea>
-        </div>
-        
-        <button class="ms-Button ms-Button--primary action-button" id="ai-submit">
-          <span class="ms-Button-icon"><i class="ms-Icon ms-Icon--Send"></i></span>
-          <span class="ms-Button-label">Demander à l'IA</span>
-        </button>
-        
-        <div class="response-container">
-          <div id="ai-response" style="display: none;">
-            <div class="response-header">
-              <span class="ms-font-m ms-fontWeight-semibold">Réponse de l'IA</span>
+      <div id="ai-container">
+        <!-- Conversation history will be displayed here -->
+        <div class="conversation-container">
+          <div id="ai-loading" style="display: none;">
+            <div class="skeleton-container">
+              <div class="skeleton-header"></div>
+              <div class="skeleton-line"></div>
+              <div class="skeleton-line"></div>
+              <div class="skeleton-line"></div>
+              <div class="skeleton-line short"></div>
             </div>
-            <div class="response-content"></div>
           </div>
           
-          <div id="ai-loading" style="display: none;">
-            <div class="ms-Spinner ms-Spinner--large"></div>
-            <div class="ms-font-m">Traitement de votre demande...</div>
+          <!-- Historique des questions/réponses -->
+          <div id="qa-history">
+            <!-- Les questions/réponses seront ajoutées ici dynamiquement -->
           </div>
         </div>
         
-        <button class="ms-Button ms-Button--primary action-button" id="insert-ai-response" style="display: none;">
-          <span class="ms-Button-icon"><i class="ms-Icon ms-Icon--Add"></i></span>
-          <span class="ms-Button-label">Insérer la réponse dans l'email</span>
-        </button>
+        <!-- Boutons d'action -->
+        <div class="action-buttons" style="display: none;" id="action-buttons">
+          <button class="ms-Button ms-Button--primary action-button" id="insert-ai-response">
+            <span class="ms-Button-icon"><i class="ms-Icon ms-Icon--Add"></i></span>
+            <span class="ms-Button-label">Insérer la réponse dans l'email</span>
+          </button>
+          
+          <button class="ms-Button ms-Button--primary action-button" id="insert-subject">
+            <span class="ms-Button-icon"><i class="ms-Icon ms-Icon--EditNote"></i></span>
+            <span class="ms-Button-label">Insérer l'objet généré</span>
+          </button>
+        </div>
+        
+        <!-- Zone de prompt déplacée en bas -->
+        <div class="prompt-container">
+          <div class="ms-TextField">
+            <label class="ms-Label">Posez une question sur cet email</label>
+            <textarea class="ms-TextField-field" id="ai-prompt" rows="3" placeholder="Exemple: Pouvez-vous résumer cet email? Quelle est l'action requise?"></textarea>
+          </div>
+          
+          <button class="ms-Button ms-Button--primary action-button" id="ai-submit">
+            <span class="ms-Button-icon"><i class="ms-Icon ms-Icon--Send"></i></span>
+            <span class="ms-Button-label">Demander à l'IA</span>
+          </button>
+        </div>
       </div>
       
       <div id="error-display" style="display: none;" class="ms-MessageBar ms-MessageBar--error">

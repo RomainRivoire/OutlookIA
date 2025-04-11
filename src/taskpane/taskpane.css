@@ -129,11 +129,6 @@ textarea.ms-TextField-field {
   line-height: 1.5;
 }
 
-#ai-loading {
-  text-align: center;
-  margin: 30px 0;
-}
-
 #error-display {
   margin: 15px 0;
   border-radius: 4px;
@@ -165,3 +160,170 @@ textarea.ms-TextField-field {
   justify-content: center;
 }
 
+/* Styles pour l'historique des questions/réponses style WhatsApp */
+.conversation-container {
+  background-color: #f0f7ff; /* Nouvelle couleur de fond plus agréable */
+  border-radius: 8px;
+  padding: 15px;
+  margin-bottom: 20px;
+  max-height: 400px;
+  overflow-y: auto;
+}
+
+#qa-history {
+  margin-top: 20px;
+  display: flex;
+  flex-direction: column;
+}
+
+.qa-item {
+  margin-bottom: 20px;
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+}
+
+.question-container {
+  align-self: flex-end;
+  max-width: 80%;
+  background-color: #dcf8c6;
+  padding: 10px 15px;
+  border-radius: 10px 0 10px 10px;
+  position: relative;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
+}
+
+.question-container:after {
+  content: "";
+  position: absolute;
+  top: 0;
+  right: -10px;
+  width: 0;
+  height: 0;
+  border-top: 10px solid #dcf8c6;
+  border-right: 10px solid transparent;
+}
+
+.question-header {
+  font-weight: 600;
+  margin-bottom: 5px;
+  color: #075e54;
+  font-size: 14px;
+}
+
+.question-content {
+  margin: 0;
+  color: #333;
+  line-height: 1.5;
+}
+
+.response-container {
+  align-self: flex-start;
+  max-width: 80%;
+  background-color: white;
+  padding: 10px 15px;
+  border-radius: 0 10px 10px 10px;
+  position: relative;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
+  margin-top: 10px;
+}
+
+.response-container:after {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: -10px;
+  width: 0;
+  height: 0;
+  border-top: 10px solid white;
+  border-left: 10px solid transparent;
+}
+
+.response-header {
+  font-weight: 600;
+  margin-bottom: 5px;
+  color: #0078d4;
+  font-size: 14px;
+  background-color: transparent;
+  padding: 0;
+  border-bottom: none;
+}
+
+.response-content {
+  padding: 0;
+  min-height: auto;
+  max-height: none;
+  overflow-y: visible;
+  line-height: 1.5;
+}
+
+/* Style pour la zone de prompt en bas */
+.prompt-container {
+  background-color: white;
+  padding: 15px;
+  border-radius: 8px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+  margin-top: 20px;
+}
+
+/* Nouveau style pour le skeleton loader */
+.skeleton-container {
+  background-color: white;
+  border-radius: 0 10px 10px 10px;
+  padding: 15px;
+  width: 70%;
+  margin: 20px 0;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
+  overflow: hidden;
+  align-self: flex-start;
+}
+
+.skeleton-header {
+  height: 20px;
+  width: 40%;
+  background: linear-gradient(90deg, #f0f0f0 25%, #e0e0e0 50%, #f0f0f0 75%);
+  background-size: 200% 100%;
+  animation: shimmer 1.5s infinite;
+  border-radius: 4px;
+  margin-bottom: 15px;
+}
+
+.skeleton-line {
+  height: 12px;
+  margin-bottom: 10px;
+  background: linear-gradient(90deg, #f0f0f0 25%, #e0e0e0 50%, #f0f0f0 75%);
+  background-size: 200% 100%;
+  animation: shimmer 1.5s infinite;
+  border-radius: 4px;
+}
+
+.skeleton-line.short {
+  width: 60%;
+}
+
+@keyframes shimmer {
+  0% {
+    background-position: -200% 0;
+  }
+  100% {
+    background-position: 200% 0;
+  }
+}
+
+/* Style pour les boutons d'action */
+.action-buttons {
+  display: flex;
+  gap: 10px;
+  margin-bottom: 20px;
+}
+
+.action-buttons .action-button {
+  flex: 1;
+  margin: 0;
+}
+
+/* Ajustement pour le chargement */
+#ai-loading {
+  align-self: flex-start;
+  width: 100%;
+}
