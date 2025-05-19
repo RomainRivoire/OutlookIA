@@ -151,10 +151,14 @@
     return "Réponse générée par IA";
   }
 
-  // Fonction pour nettoyer la réponse avant insertion (supprimer l'objet suggéré)
+  // Fonction pour nettoyer la réponse avant insertion (supprimer l'objet suggéré et extraire le texte après "---")
   function cleanResponseForInsertion(response) {
+    // Extraire le texte après le délimiteur "---"
+    const delimiterIndex = response.indexOf("---");
+    let cleanedResponse = delimiterIndex !== -1 ? response.substring(delimiterIndex + 3).trim() : response;
+
     // Supprimer les lignes contenant des suggestions d'objet
-    let cleanedResponse = response
+    cleanedResponse = cleanedResponse
       .replace(/Objet suggéré\s*:.*(\n|$)/gi, "")
       .replace(/Sujet suggéré\s*:.*(\n|$)/gi, "")
       .replace(/Objet\s*:.*(\n|$)/gi, "")
@@ -192,11 +196,6 @@
       .replace(/\n{3,}/g, "\n\n") // Remplace 3+ sauts de ligne par 2
       .replace(/^\s+|\s+$/gm, ""); // Supprime les espaces en début et fin de ligne
 
-    // Assurer que les paragraphes sont bien séparés pour Outlook
-    cleanedResponse = cleanedResponse
-      .replace(/\n/g, "\r\n") // Utiliser le format Windows pour les sauts de ligne
-      .replace(/([.!?])\s*\r\n/g, "$1\r\n\r\n"); // Ajouter un saut de ligne supplémentaire après les fins de phrase suivies d'un saut de ligne
-
     return cleanedResponse;
   }
 
@@ -216,58 +215,65 @@
   // Fonction pour remplacer la dernière insertion ou insérer une nouvelle réponse
   function replaceOrInsertResponse(newResponse) {
     try {
-      // Récupérer le contenu actuel du mail
-      Office.context.mailbox.item.body.getAsync(Office.CoercionType.Text, (result) => {
-        if (result.status !== Office.AsyncResultStatus.Succeeded) {
-          showError(
-            "Impossible de lire le contenu du mail: " + (result.error ? result.error.message : "Erreur inconnue")
-          );
-          return;
+      // Utiliser directement le format texte avec des sauts de ligne
+      // Outlook va automatiquement appliquer le style de texte par défaut du mail
+      Office.context.mailbox.item.body.setSelectedDataAsync(
+        newResponse,
+        { coercionType: Office.CoercionType.Text },
+        (result) => {
+          if (result.status !== Office.AsyncResultStatus.Succeeded) {
+            showError("Impossible d'insérer la réponse: " + (result.error ? result.error.message : "Erreur inconnue"));
+            return;
+          }
+
+          // Mettre à jour la référence à la dernière insertion
+          lastInsertedResponse = newResponse;
+
+          // Appliquer le formatage après insertion
+          applyFormattingToLastInserted();
         }
-
-        const currentBody = result.value;
-
-        // Si nous avons une dernière insertion et qu'elle est présente dans le corps du mail
-        if (lastInsertedResponse && currentBody.includes(lastInsertedResponse)) {
-          // Remplacer la dernière insertion par la nouvelle
-          const updatedBody = currentBody.replace(lastInsertedResponse, newResponse);
-
-          Office.context.mailbox.item.body.setAsync(
-            updatedBody,
-            { coercionType: Office.CoercionType.Text },
-            (result) => {
-              if (result.status !== Office.AsyncResultStatus.Succeeded) {
-                showError(
-                  "Impossible de mettre à jour la réponse: " + (result.error ? result.error.message : "Erreur inconnue")
-                );
-                return;
-              }
-
-              // Mettre à jour la référence à la dernière insertion
-              lastInsertedResponse = newResponse;
-            }
-          );
-        } else {
-          // Si pas de dernière insertion ou si elle n'est plus présente, insérer à la position actuelle
-          Office.context.mailbox.item.body.setSelectedDataAsync(
-            newResponse,
-            { coercionType: Office.CoercionType.Text },
-            (result) => {
-              if (result.status !== Office.AsyncResultStatus.Succeeded) {
-                showError(
-                  "Impossible d'insérer la réponse: " + (result.error ? result.error.message : "Erreur inconnue")
-                );
-                return;
-              }
-
-              // Mettre à jour la référence à la dernière insertion
-              lastInsertedResponse = newResponse;
-            }
-          );
-        }
-      });
+      );
     } catch (e) {
       showError("Erreur lors de l'insertion/remplacement de la réponse: " + e.message);
+    }
+  }
+
+  // Nouvelle fonction pour appliquer le formatage après insertion
+  function applyFormattingToLastInserted() {
+    try {
+      // Obtenir l'objet Word pour le document
+      Office.context.mailbox.item.getSelectedDataAsync(
+        Office.CoercionType.Text,
+        { valueFormat: Office.ValueFormat.Formatted },
+        (result) => {
+          if (result.status !== Office.AsyncResultStatus.Succeeded) {
+            console.log("Impossible d'obtenir la sélection actuelle");
+            return;
+          }
+
+          // Appliquer le formatage de paragraphe
+          Office.context.mailbox.item.body.setSelectedDataAsync(
+            result.value,
+            {
+              coercionType: Office.CoercionType.Text,
+              asyncContext: {
+                paragraphFormat: {
+                  lineSpacing: 1.5,
+                  firstLineIndent: 0,
+                  alignment: "left",
+                  spaceBefore: 12,
+                  spaceAfter: 12,
+                },
+              },
+            },
+            (result) => {
+              console.log("Formatage appliqué");
+            }
+          );
+        }
+      );
+    } catch (e) {
+      console.error("Erreur lors de l'application du formatage:", e);
     }
   }
 
