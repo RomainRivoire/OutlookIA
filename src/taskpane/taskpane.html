@@ -1,97 +1,114 @@
-<!DOCTYPE html>
+<!doctype html>
 <html>
-
-<head>
+  <head>
     <meta charset="UTF-8" />
     <meta http-equiv="X-UA-Compatible" content="IE=Edge" />
-    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Assistant IA pour Email</title>
 
-    <!-- Office JavaScript API -->
+    <!-- Load Office.js ONLY ONCE - this should be first -->
     <script type="text/javascript" src="https://appsforoffice.microsoft.com/lib/1/hosted/office.js"></script>
 
-   <!-- For more information on Fluent UI, visit https://developer.microsoft.com/fluentui. -->
-    <link rel="stylesheet" href="https://res-1.cdn.office.net/files/fabric-cdn-prod_20230815.002/office-ui-fabric-core/11.1.0/css/fabric.min.css"/>
+    <!-- Other dependencies -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jquery/3.6.0/jquery.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.6.347/pdf.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/mammoth/1.4.8/mammoth.browser.min.js"></script>
+
+    <!-- For more information on Fluent UI, visit https://developer.microsoft.com/fluentui. -->
+    <link
+      rel="stylesheet"
+      href="https://res-1.cdn.office.net/files/fabric-cdn-prod_20230815.002/office-ui-fabric-core/11.1.0/css/fabric.min.css"
+    />
 
     <!-- Template styles -->
     <link href="taskpane.css" rel="stylesheet" type="text/css" />
-</head>
+  </head>
 
-<body class="ms-font-l ms-landing-page">
-  <main class="ms-landing-page__main">
-    <section class="ms-landing-page__content ms-font-m ms-fontColor-neutralPrimary">
-      <div class="header">
-        <h1 class="ms-font-xxl">Assistant IA pour Email</h1>
-        <p class="ms-font-m">Analysez et répondez à vos emails avec l'aide de l'IA</p>
-      </div>
-      
-      <!-- Section de configuration de la clé API supprimée -->
-      
-      <div id="ai-container">
-        <!-- Conversation history will be displayed here -->
-        <div class="conversation-container">
-          <div id="ai-loading" style="display: none;">
-            <div class="skeleton-container">
-              <div class="skeleton-header"></div>
-              <div class="skeleton-line"></div>
-              <div class="skeleton-line"></div>
-              <div class="skeleton-line"></div>
-              <div class="skeleton-line short"></div>
+  <body class="ms-font-l ms-landing-page">
+    <main class="ms-landing-page__main">
+      <section class="ms-landing-page__content ms-font-m ms-fontColor-neutralPrimary">
+        <div class="header">
+          <h1 class="ms-font-xxl">Assistant IA pour Email</h1>
+          <p class="ms-font-m">Analysez et répondez à vos emails avec l'aide de l'IA</p>
+        </div>
+
+        <!-- Section de configuration de la clé API supprimée -->
+
+        <div id="ai-container">
+          <!-- Conversation history will be displayed here -->
+          <div class="conversation-container">
+            <div id="ai-loading" style="display: none">
+              <div class="skeleton-container">
+                <div class="skeleton-header"></div>
+                <div class="skeleton-line"></div>
+                <div class="skeleton-line"></div>
+                <div class="skeleton-line"></div>
+                <div class="skeleton-line short"></div>
+              </div>
+            </div>
+
+            <!-- Historique des questions/réponses -->
+            <div id="qa-history">
+              <!-- Les questions/réponses seront ajoutées ici dynamiquement -->
             </div>
           </div>
-          
-          <!-- Historique des questions/réponses -->
-          <div id="qa-history">
-            <!-- Les questions/réponses seront ajoutées ici dynamiquement -->
-          </div>
-        </div>
-        
-        <!-- Boutons d'action -->
-        <div class="action-buttons" style="display: none;" id="action-buttons">
-          <button class="ms-Button ms-Button--primary action-button" id="insert-ai-response">
-            <span class="ms-Button-icon"><i class="ms-Icon ms-Icon--Add"></i></span>
-            <span class="ms-Button-label">Insérer la réponse dans l'email</span>
-          </button>
-          
-          <button class="ms-Button ms-Button--primary action-button" id="insert-subject">
-            <span class="ms-Button-icon"><i class="ms-Icon ms-Icon--EditNote"></i></span>
-            <span class="ms-Button-label">Insérer l'objet généré</span>
-          </button>
-        </div>
-        
-        <!-- Zone de prompt déplacée en bas -->
-        <div class="prompt-container">
-          <div class="ms-TextField">
-            <label class="ms-Label">Posez une question sur cet email</label>
-            <textarea class="ms-TextField-field" id="ai-prompt" rows="3" placeholder="Exemple: Pouvez-vous résumer cet email? Quelle est l'action requise?"></textarea>
-          </div>
-          
-          <button class="ms-Button ms-Button--primary action-button" id="ai-submit">
-            <span class="ms-Button-icon"><i class="ms-Icon ms-Icon--Send"></i></span>
-            <span class="ms-Button-label">Demander à l'IA</span>
-          </button>
-        </div>
-      </div>
-      
-      <div id="error-display" style="display: none;" class="ms-MessageBar ms-MessageBar--error">
-        <div class="ms-MessageBar-content">
-          <div class="ms-MessageBar-icon">
-            <i class="ms-Icon ms-Icon--Error"></i>
-          </div>
-          <div class="ms-MessageBar-text" id="error-message"></div>
-        </div>
-      </div>
-    </section>
-  </main>
-  <footer class="ms-landing-page__footer">
-    <div class="ms-landing-page__footer--left">
-      <p class="ms-font-s ms-fontColor-neutralSecondary">© 2024 Assistant IA pour Email</p>
-    </div>
-  </footer>
-  <script type="text/javascript" src="../../node_modules/jquery/dist/jquery.js"></script>
-  <script type="text/javascript" src="../helpers/addin-config.js"></script>
-  <script type="text/javascript" src="../helpers/mistral-api.js"></script>
-  <script type="text/javascript" src="taskpane.js"></script>
-</body>
 
+          <!-- Boutons d'action -->
+          <div class="action-buttons" style="display: none" id="action-buttons">
+            <button class="ms-Button ms-Button--primary action-button" id="insert-ai-response">
+              <span class="ms-Button-icon"><i class="ms-Icon ms-Icon--Add"></i></span>
+              <span class="ms-Button-label">Insérer la réponse dans l'email</span>
+            </button>
+
+            <button class="ms-Button ms-Button--primary action-button" id="insert-subject">
+              <span class="ms-Button-icon"><i class="ms-Icon ms-Icon--EditNote"></i></span>
+              <span class="ms-Button-label">Insérer l'objet généré</span>
+            </button>
+          </div>
+
+          <!-- Zone de prompt déplacée en bas -->
+          <div class="prompt-container">
+            <div class="ms-TextField">
+              <label class="ms-Label">Posez une question sur cet email</label>
+              <textarea
+                class="ms-TextField-field"
+                id="ai-prompt"
+                rows="3"
+                placeholder="Exemple: Pouvez-vous résumer cet email? Quelle est l'action requise?"
+              ></textarea>
+            </div>
+
+            <button class="ms-Button ms-Button--primary action-button" id="ai-submit">
+              <span class="ms-Button-icon"><i class="ms-Icon ms-Icon--Send"></i></span>
+              <span class="ms-Button-label">Demander à l'IA</span>
+            </button>
+          </div>
+        </div>
+
+        <!-- Log area for displaying logs -->
+        <div id="log-area" style="height: 200px; overflow-y: scroll; border: 1px solid #ccc; padding: 10px; margin-top: 10px;">
+          <!-- Logs will be displayed here -->
+        </div>
+
+        <div id="error-display" style="display: none" class="ms-MessageBar ms-MessageBar--error">
+          <div class="ms-MessageBar-content">
+            <div class="ms-MessageBar-icon">
+              <i class="ms-Icon ms-Icon--Error"></i>
+            </div>
+            <div class="ms-MessageBar-text" id="error-message"></div>
+          </div>
+        </div>
+      </section>
+    </main>
+    <footer class="ms-landing-page__footer">
+      <div class="ms-landing-page__footer--left">
+        <p class="ms-font-s ms-fontColor-neutralSecondary">© 2024 Assistant IA pour Email</p>
+      </div>
+    </footer>
+
+    <!-- Load your custom scripts after Office.js and jQuery -->
+    <script type="text/javascript" src="../helpers/addin-config.js"></script>
+    <script type="text/javascript" src="../helpers/mistral-api.js"></script>
+    <script type="text/javascript" src="taskpane.js"></script>
+  </body>
 </html>

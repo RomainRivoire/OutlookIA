@@ -9,47 +9,91 @@
   let generatedSubject = "";
   let lastInsertedResponse = ""; // Pour suivre la dernière réponse insérée
   const qaHistory = [];
+  // Function to log messages
+  function logMessage(message) {
+    console.log(message); // Log to console
+    // Optionally, log to a specific area in the task pane
+    $("#log-area").append(`<div>${new Date().toISOString()}: ${message}</div>`);
+  }
 
-  // Add the missing functions inside the scope
+  // Function to get email content with logging
   function getEmailContent(callback) {
     try {
-      // Get the current item (email)
+      logMessage("Getting email content...");
       const item = Office.context.mailbox.item;
+      const conversationId = item.conversationId;
 
-      // Get the email body
-      item.body.getAsync(Office.CoercionType.Text, (result) => {
-        if (result.status === Office.AsyncResultStatus.Succeeded) {
-          const emailBody = result.value;
-          const subject = item.subject || "";
+      logMessage("REST URL:", Office.context.mailbox.restUrl);
 
-          // Get the sender
-          const sender = item.sender;
-          const senderEmail = sender ? sender.emailAddress : "Inconnu";
+      logMessage("Exchange REST disponible ? " + (Office.context.mailbox.restUrl ? "Oui" : "Non"));
 
-          // Combine all information
-          const emailContent = {
-            subject: subject,
-            sender: senderEmail,
-            body: emailBody,
-          };
+      logMessage(`REST URL réelle: ${Office.context.mailbox.restUrl}`);
+      logMessage(`EWS URL: ${Office.context.mailbox.ewsUrl}`);
 
-          callback(emailContent);
-        } else {
-          callback(
-            null,
-            result.error ? result.error.message : "Erreur inconnue lors de la récupération du contenu de l'email"
-          );
+      Office.context.mailbox.getCallbackTokenAsync(
+        {
+          forceConsent: false,
+          isRest: true,
+          scopes: ["mail.read"],
+          diagnostics: {
+            traceFlags: 63, // Niveau de trace maximal
+            customData: JSON.stringify({
+              clientVersion: Office.context.diagnostics.version,
+              mailboxType: Office.context.mailbox.diagnostics.mailboxType,
+            }),
+          },
+        },
+        function (result) {
+          logMessage("Call graph :" + result.status);
+          if (result.status === Office.AsyncResultStatus.Failed) {
+            logMessage(`Error code: ${result.error.code}, Name: ${result.error.name}`);
+            logMessage("Diagnostics complets:" + result.error.httpStatus);
+          }
+
+          if (result.status === Office.AsyncResultStatus.Succeeded) {
+            const accessToken = result.value;
+            logMessage("Access token retrieved successfully.");
+
+            $.ajax({
+              url: `https://graph.microsoft.com/v2.0/me/messages?$filter=conversationId eq '${conversationId}'`,
+              type: "GET",
+              headers: {
+                Authorization: `Bearer ${accessToken}`,
+              },
+            })
+              .done(function (response) {
+                if (response.value && response.value.length > 0) {
+                  const emails = response.value;
+                  const emailContents = emails.map((email) => ({
+                    subject: email.subject || "",
+                    sender: email.from ? email.from.emailAddress.address : "Inconnu",
+                    body: email.body.content,
+                  }));
+
+                  logMessage("Email content retrieved successfully.");
+                  callback(emailContents);
+                } else {
+                  logMessage("No conversation history found.");
+                  callback(null, "Aucun historique de conversation trouvé");
+                }
+              })
+              .fail(function (error) {
+                logMessage("Error retrieving conversation history: " + error.message);
+                callback(null, "Erreur lors de la récupération de l'historique de conversation: " + error.message);
+              });
+          } else {
+            logMessage("Error retrieving access token: " + result.error.message);
+            callback(null, "Erreur lors de la récupération du token d'accès: " + result.error.message);
+          }
         }
-      });
+      );
     } catch (e) {
+      logMessage("Error accessing email: " + e.message);
       callback(null, "Erreur lors de l'accès à l'email: " + e.message);
     }
   }
 
   function getConfig() {
-    // Implementation for getConfig
-    // This depends on how you're storing configuration
-    // Example implementation:
     try {
       const savedConfig = Office.context.roamingSettings.get("mistralConfig");
       return savedConfig ? JSON.parse(savedConfig) : {};
@@ -151,14 +195,10 @@
     return "Réponse générée par IA";
   }
 
-  // Fonction pour nettoyer la réponse avant insertion (supprimer l'objet suggéré et extraire le texte après "---")
+  // Fonction pour nettoyer la réponse avant insertion (supprimer l'objet suggéré)
   function cleanResponseForInsertion(response) {
-    // Extraire le texte après le délimiteur "---"
-    const delimiterIndex = response.indexOf("---");
-    let cleanedResponse = delimiterIndex !== -1 ? response.substring(delimiterIndex + 3).trim() : response;
-
     // Supprimer les lignes contenant des suggestions d'objet
-    cleanedResponse = cleanedResponse
+    let cleanedResponse = response
       .replace(/Objet suggéré\s*:.*(\n|$)/gi, "")
       .replace(/Sujet suggéré\s*:.*(\n|$)/gi, "")
       .replace(/Objet\s*:.*(\n|$)/gi, "")
@@ -196,6 +236,11 @@
       .replace(/\n{3,}/g, "\n\n") // Remplace 3+ sauts de ligne par 2
       .replace(/^\s+|\s+$/gm, ""); // Supprime les espaces en début et fin de ligne
 
+    // Assurer que les paragraphes sont bien séparés pour Outlook
+    cleanedResponse = cleanedResponse
+      .replace(/\n/g, "\r\n") // Utiliser le format Windows pour les sauts de ligne
+      .replace(/([.!?])\s*\r\n/g, "$1\r\n\r\n"); // Ajouter un saut de ligne supplémentaire après les fins de phrase suivies d'un saut de ligne
+
     return cleanedResponse;
   }
 
@@ -215,65 +260,58 @@
   // Fonction pour remplacer la dernière insertion ou insérer une nouvelle réponse
   function replaceOrInsertResponse(newResponse) {
     try {
-      // Utiliser directement le format texte avec des sauts de ligne
-      // Outlook va automatiquement appliquer le style de texte par défaut du mail
-      Office.context.mailbox.item.body.setSelectedDataAsync(
-        newResponse,
-        { coercionType: Office.CoercionType.Text },
-        (result) => {
-          if (result.status !== Office.AsyncResultStatus.Succeeded) {
-            showError("Impossible d'insérer la réponse: " + (result.error ? result.error.message : "Erreur inconnue"));
-            return;
-          }
-
-          // Mettre à jour la référence à la dernière insertion
-          lastInsertedResponse = newResponse;
-
-          // Appliquer le formatage après insertion
-          applyFormattingToLastInserted();
+      // Récupérer le contenu actuel du mail
+      Office.context.mailbox.item.body.getAsync(Office.CoercionType.Text, (result) => {
+        if (result.status !== Office.AsyncResultStatus.Succeeded) {
+          showError(
+            "Impossible de lire le contenu du mail: " + (result.error ? result.error.message : "Erreur inconnue")
+          );
+          return;
         }
-      );
-    } catch (e) {
-      showError("Erreur lors de l'insertion/remplacement de la réponse: " + e.message);
-    }
-  }
 
-  // Nouvelle fonction pour appliquer le formatage après insertion
-  function applyFormattingToLastInserted() {
-    try {
-      // Obtenir l'objet Word pour le document
-      Office.context.mailbox.item.getSelectedDataAsync(
-        Office.CoercionType.Text,
-        { valueFormat: Office.ValueFormat.Formatted },
-        (result) => {
-          if (result.status !== Office.AsyncResultStatus.Succeeded) {
-            console.log("Impossible d'obtenir la sélection actuelle");
-            return;
-          }
+        const currentBody = result.value;
 
-          // Appliquer le formatage de paragraphe
-          Office.context.mailbox.item.body.setSelectedDataAsync(
-            result.value,
-            {
-              coercionType: Office.CoercionType.Text,
-              asyncContext: {
-                paragraphFormat: {
-                  lineSpacing: 1.5,
-                  firstLineIndent: 0,
-                  alignment: "left",
-                  spaceBefore: 12,
-                  spaceAfter: 12,
-                },
-              },
-            },
+        // Si nous avons une dernière insertion et qu'elle est présente dans le corps du mail
+        if (lastInsertedResponse && currentBody.includes(lastInsertedResponse)) {
+          // Remplacer la dernière insertion par la nouvelle
+          const updatedBody = currentBody.replace(lastInsertedResponse, newResponse);
+
+          Office.context.mailbox.item.body.setAsync(
+            updatedBody,
+            { coercionType: Office.CoercionType.Text },
             (result) => {
-              console.log("Formatage appliqué");
+              if (result.status !== Office.AsyncResultStatus.Succeeded) {
+                showError(
+                  "Impossible de mettre à jour la réponse: " + (result.error ? result.error.message : "Erreur inconnue")
+                );
+                return;
+              }
+
+              // Mettre à jour la référence à la dernière insertion
+              lastInsertedResponse = newResponse;
+            }
+          );
+        } else {
+          // Si pas de dernière insertion ou si elle n'est plus présente, insérer à la position actuelle
+          Office.context.mailbox.item.body.setSelectedDataAsync(
+            newResponse,
+            { coercionType: Office.CoercionType.Text },
+            (result) => {
+              if (result.status !== Office.AsyncResultStatus.Succeeded) {
+                showError(
+                  "Impossible d'insérer la réponse: " + (result.error ? result.error.message : "Erreur inconnue")
+                );
+                return;
+              }
+
+              // Mettre à jour la référence à la dernière insertion
+              lastInsertedResponse = newResponse;
             }
           );
         }
-      );
+      });
     } catch (e) {
-      console.error("Erreur lors de l'application du formatage:", e);
+      showError("Erreur lors de l'insertion/remplacement de la réponse: " + e.message);
     }
   }
 
@@ -343,7 +381,7 @@
         $("#ai-loading").show();
 
         // Get email content
-        getEmailContent((emailContent, error) => {
+        getEmailContent((emailContents, error) => {
           if (error) {
             $("#ai-loading").hide();
             showError("Erreur lors de la récupération du contenu de l'email: " + error);
@@ -352,18 +390,25 @@
 
           // Create a prompt with email context and ask for a subject
           const fullPrompt = `
-            Je regarde un email avec les détails suivants:
-            
-            Objet: ${emailContent.subject}
-            De: ${emailContent.sender}
-            
-            Contenu:
-            ${emailContent.body}
-            
+            Je regarde une conversation avec les détails suivants:
+
+            ${emailContents
+              .map(
+                (emailContent, index) => `
+                Email ${index + 1}:
+                Objet: ${emailContent.subject}
+                De: ${emailContent.sender}
+
+                Contenu:
+                ${emailContent.body}
+              `
+              )
+              .join("\n\n")}
+
             ${prompt}
-            
+
             En plus de répondre à ma question, pourriez-vous également suggérer un objet approprié pour ma réponse? Présentez-le sous la forme "Objet suggéré: [votre suggestion d'objet]" à la fin de votre réponse.
-            
+
             Veuillez répondre en français.
           `;
 
@@ -399,18 +444,15 @@
         });
       });
 
-      // When insert AI response button is clicked
       $("#insert-ai-response").on("click", () => {
         if (aiResponse) {
           // Nettoyer la réponse avant insertion
           const cleanedResponse = cleanResponseForInsertion(aiResponse);
 
-          // Remplacer la dernière insertion ou insérer une nouvelle réponse
           replaceOrInsertResponse(cleanedResponse);
         }
       });
 
-      // When insert subject button is clicked
       $("#insert-subject").on("click", () => {
         if (generatedSubject) {
           setEmailSubject(generatedSubject);

@@ -25,7 +25,11 @@ module.exports = async (env, options) => {
       clean: true,
     },
     resolve: {
-      extensions: [".html", ".js"],
+      fallback: {
+        buffer: require.resolve("buffer/"),
+        stream: require.resolve("stream-browserify"),
+        crypto: require.resolve("crypto-browserify"),
+      },
     },
     module: {
       rules: [

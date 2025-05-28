@@ -26,13 +26,20 @@
     "watch": "webpack --mode development --watch"
   },
   "dependencies": {
+    "buffer": "^6.0.3",
     "core-js": "^3.37.1",
+    "crypto-browserify": "^3.12.1",
     "docxtemplater": "^3.60.2",
     "jquery": "^3.7.1",
     "jszip": "^3.10.1",
+    "mammoth": "^1.9.0",
+    "pdf-parse": "^1.1.1",
+    "pdfjs-dist": "^2.6.347",
     "regenerator-runtime": "^0.14.1",
     "showdown": "^2.1.0",
-    "urijs": "^1.19.11"
+    "stream-browserify": "^3.0.0",
+    "urijs": "^1.19.11",
+    "xlsx": "^0.18.5"
   },
   "devDependencies": {
     "@babel/core": "^7.24.7",
