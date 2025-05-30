@@ -405,20 +405,6 @@ const GraphHelper = require("../helpers/graphHelper.js").default;
     }
   }
 
-  function setConfig(configObj, callback) {
-    try {
-      Office.context.roamingSettings.set("mistralConfig", JSON.stringify(configObj));
-      Office.context.roamingSettings.saveAsync((result) => {
-        callback(result);
-      });
-    } catch (e) {
-      callback({
-        status: Office.AsyncResultStatus.Failed,
-        error: { message: e.message },
-      });
-    }
-  }
-
   function callMistralAPI(apiKey, prompt, callback) {
     const requestUrl = "https://api.mistral.ai/v1/chat/completions";
 
