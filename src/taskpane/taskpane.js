@@ -53,6 +53,116 @@ const GraphHelper = require("../helpers/graphHelper.js").default;
     }
   }
 
+  // Fonction pour vérifier si une pièce jointe est PDF ou DOCX
+  function isRelevantAttachment(attachment) {
+    const relevantTypes = [
+      "application/pdf",
+      "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+      "application/msword",
+    ];
+
+    const fileExtensions = [".pdf", ".docx", ".doc"];
+
+    // Vérifier par type MIME
+    if (attachment.contentType && relevantTypes.includes(attachment.contentType.toLowerCase())) {
+      return true;
+    }
+
+    // Vérifier par extension de fichier
+    if (attachment.name) {
+      const fileName = attachment.name.toLowerCase();
+      return fileExtensions.some((ext) => fileName.endsWith(ext));
+    }
+
+    return false;
+  }
+
+  // Fonction pour lire le contenu d'une pièce jointe
+  async function readAttachmentContent(attachment, accessToken, userEmail) {
+    if (!isRelevantAttachment(attachment)) {
+      return null;
+    }
+
+    try {
+      logMessage(`Reading attachment: ${attachment.name}`);
+
+      // URL pour récupérer le contenu de la pièce jointe
+      const attachmentUrl = `https://graph.microsoft.com/v1.0/users/${encodeURIComponent(userEmail)}/messages/${attachment.messageId}/attachments/${attachment.id}/$value`;
+
+      const response = await fetch(attachmentUrl, {
+        method: "GET",
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+        },
+      });
+
+      if (!response.ok) {
+        logMessage(`Failed to read attachment ${attachment.name}: ${response.status}`);
+        return {
+          name: attachment.name,
+          type: attachment.contentType || "unknown",
+          content: "[Contenu non accessible]",
+          error: `Erreur ${response.status}`,
+          size: attachment.size || 0,
+        };
+      }
+
+      const arrayBuffer = await response.arrayBuffer();
+
+      // Pour les PDF, on ne peut pas extraire le texte directement côté client
+      // On indique simplement la présence du fichier
+      if (attachment.contentType === "application/pdf" || attachment.name.toLowerCase().endsWith(".pdf")) {
+        return {
+          name: attachment.name,
+          type: "PDF",
+          content: "[Document PDF présent - contenu non extrait]",
+          size: arrayBuffer.byteLength,
+        };
+      }
+
+      // Pour les documents Word (.docx), on peut essayer d'extraire le texte
+      if (
+        attachment.contentType === "application/vnd.openxmlformats-officedocument.wordprocessingml.document" ||
+        attachment.name.toLowerCase().endsWith(".docx")
+      ) {
+        // Ici, vous pourriez utiliser une bibliothèque comme mammoth.js pour extraire le texte
+        // Pour l'instant, on indique simplement la présence du document
+        return {
+          name: attachment.name,
+          type: "DOCX",
+          content: "[Document Word présent - contenu non extrait]",
+          size: arrayBuffer.byteLength,
+        };
+      }
+
+      // Pour les anciens documents Word (.doc)
+      if (attachment.contentType === "application/msword" || attachment.name.toLowerCase().endsWith(".doc")) {
+        return {
+          name: attachment.name,
+          type: "DOC",
+          content: "[Document Word (ancien format) présent - contenu non extrait]",
+          size: arrayBuffer.byteLength,
+        };
+      }
+
+      return {
+        name: attachment.name,
+        type: attachment.contentType || "unknown",
+        content: "[Document présent]",
+        size: arrayBuffer.byteLength,
+      };
+    } catch (error) {
+      logMessage(`Error reading attachment ${attachment.name}: ${error.message}`);
+      return {
+        name: attachment.name,
+        type: attachment.contentType || "unknown",
+        content: "[Erreur lors de la lecture]",
+        error: error.message,
+        size: attachment.size || 0,
+      };
+    }
+  }
+
   // Fonction pour appeler Microsoft Graph API
   async function callGraphAPI(conversationId, accessToken, callback) {
     const userEmail = Office.context.mailbox.userProfile.emailAddress;
@@ -65,16 +175,15 @@ const GraphHelper = require("../helpers/graphHelper.js").default;
 
     logMessage(`Using user email: ${userEmail}`);
 
-    const graphUrl = `https://graph.microsoft.com/v1.0/users/${encodeURIComponent(
-      userEmail
-    )}/messages?$filter=conversationId eq '${encodeURIComponent(
-      conversationId
-    )}'&$expand=attachments&$select=id,subject,from,body,receivedDateTime,attachments`;
-
-    logMessage(`Calling Graph API: ${graphUrl}`);
-
     try {
-      const response = await fetch(graphUrl, {
+      // Étape 1: Récupérer la liste des emails de la conversation (sans pièces jointes)
+      const messagesUrl = `https://graph.microsoft.com/v1.0/users/${encodeURIComponent(
+        userEmail
+      )}/messages?$filter=conversationId eq '${encodeURIComponent(conversationId)}'&$select=id,subject,from,body`;
+
+      logMessage(`Step 1: Getting messages list: ${messagesUrl}`);
+
+      const messagesResponse = await fetch(messagesUrl, {
         method: "GET",
         headers: {
           Authorization: `Bearer ${accessToken}`,
@@ -82,20 +191,81 @@ const GraphHelper = require("../helpers/graphHelper.js").default;
         },
       });
 
-      if (!response.ok) {
-        const errorText = await response.text();
-        logMessage(`Graph API error: ${response.status} - ${response.statusText}`);
+      if (!messagesResponse.ok) {
+        const errorText = await messagesResponse.text();
+        logMessage(`Messages API error: ${messagesResponse.status} - ${messagesResponse.statusText}`);
         logMessage(`Response: ${errorText}`);
         getCurrentEmailOnly(callback);
         return;
       }
 
-      const data = await response.json();
-      logMessage("Graph API call successful");
+      const messagesData = await messagesResponse.json();
+      logMessage("Messages API call successful");
 
-      if (data.value && data.value.length > 0) {
-        const emails = data.value;
-        const emailContents = emails.map((email) => ({
+      if (!messagesData.value || messagesData.value.length === 0) {
+        logMessage("No emails found in conversation");
+        callback(null, "Aucun email trouvé dans cette conversation");
+        return;
+      }
+
+      const emails = messagesData.value;
+      logMessage(`Found ${emails.length} emails in conversation`);
+
+      const emailContents = [];
+
+      // Étape 2: Pour chaque email, récupérer ses pièces jointes séparément
+      for (const email of emails) {
+        logMessage(`Processing email: ${email.subject}`);
+
+        // Récupérer les pièces jointes pour cet email spécifique
+        const attachmentsUrl = `https://graph.microsoft.com/v1.0/users/${encodeURIComponent(
+          userEmail
+        )}/messages/${email.id}/attachments?$select=id,name,contentType,size`;
+
+        let attachments = [];
+        try {
+          const attachmentsResponse = await fetch(attachmentsUrl, {
+            method: "GET",
+            headers: {
+              Authorization: `Bearer ${accessToken}`,
+              "Content-Type": "application/json",
+            },
+          });
+
+          if (attachmentsResponse.ok) {
+            const attachmentsData = await attachmentsResponse.json();
+            attachments = attachmentsData.value || [];
+            logMessage(`Found ${attachments.length} attachments for email ${email.subject}`);
+          } else {
+            logMessage(`Failed to get attachments for email ${email.subject}: ${attachmentsResponse.status}`);
+          }
+        } catch (attachError) {
+          logMessage(`Error getting attachments for email ${email.subject}: ${attachError.message}`);
+        }
+
+        // Filtrer les pièces jointes pertinentes
+        const relevantAttachments = attachments.filter((att) => isRelevantAttachment(att));
+        logMessage(`Email ${email.subject}: ${relevantAttachments.length} relevant attachments found`);
+
+        // Lire le contenu des pièces jointes pertinentes
+        const attachmentContents = [];
+        for (const attachment of relevantAttachments) {
+          const content = await readAttachmentContent(
+            {
+              ...attachment,
+              parentId: email.id,
+              messageId: email.id,
+            },
+            accessToken,
+            userEmail
+          );
+
+          if (content) {
+            attachmentContents.push(content);
+          }
+        }
+
+        emailContents.push({
           id: email.id,
           subject: email.subject || "Sans objet",
           sender: email.from ? email.from.emailAddress.address : "Expéditeur inconnu",
@@ -103,26 +273,27 @@ const GraphHelper = require("../helpers/graphHelper.js").default;
           body: email.body.content || "",
           bodyType: email.body.contentType || "text",
           receivedDateTime: email.receivedDateTime,
-          attachments: email.attachments || [],
-        }));
-
-        logMessage(`Retrieved ${emailContents.length} emails from conversation`);
-
-        // Log des pièces jointes trouvées
-        emailContents.forEach((email, index) => {
-          if (email.attachments.length > 0) {
-            logMessage(`Email ${index + 1} has ${email.attachments.length} attachments`);
-            email.attachments.forEach((att) => {
-              logMessage(`- Attachment: ${att.name} (${att.contentType})`);
-            });
-          }
+          attachments: relevantAttachments,
+          attachmentContents: attachmentContents,
         });
-
-        callback(emailContents);
-      } else {
-        logMessage("No emails found in conversation");
-        callback(null, "Aucun email trouvé dans cette conversation");
       }
+
+      // Trier les emails par date (plus ancien en premier)
+      emailContents.sort((a, b) => new Date(a.receivedDateTime) - new Date(b.receivedDateTime));
+
+      logMessage(`Retrieved ${emailContents.length} emails from conversation with filtered attachments`);
+
+      // Log des pièces jointes pertinentes trouvées
+      emailContents.forEach((email, index) => {
+        if (email.attachmentContents.length > 0) {
+          logMessage(`Email ${index + 1} has ${email.attachmentContents.length} relevant attachments`);
+          email.attachmentContents.forEach((att) => {
+            logMessage(`- Attachment: ${att.name} (${att.type})`);
+          });
+        }
+      });
+
+      callback(emailContents);
     } catch (error) {
       logMessage(`Error in Graph API call: ${error.message}`);
       getCurrentEmailOnly(callback);
@@ -139,6 +310,11 @@ const GraphHelper = require("../helpers/graphHelper.js").default;
       // Récupérer le corps de l'email courant
       item.body.getAsync(Office.CoercionType.Html, function (result) {
         if (result.status === Office.AsyncResultStatus.Succeeded) {
+          // Filtrer les pièces jointes de l'email courant
+          const relevantAttachments = item.attachments
+            ? item.attachments.filter((att) => isRelevantAttachment(att))
+            : [];
+
           const emailContent = [
             {
               id: item.itemId || "current",
@@ -148,7 +324,12 @@ const GraphHelper = require("../helpers/graphHelper.js").default;
               body: result.value,
               bodyType: "html",
               receivedDateTime: item.dateTimeCreated ? item.dateTimeCreated.toISOString() : new Date().toISOString(),
-              attachments: item.attachments || [],
+              attachments: relevantAttachments,
+              attachmentContents: relevantAttachments.map((att) => ({
+                name: att.name,
+                type: att.contentType,
+                content: "[Pièce jointe disponible - contenu non accessible en mode fallback]",
+              })),
             },
           ];
 
@@ -163,17 +344,55 @@ const GraphHelper = require("../helpers/graphHelper.js").default;
     }
   }
 
-  // Fonction pour traiter les pièces jointes
-  function processAttachments(attachments) {
-    if (!attachments || attachments.length === 0) {
-      return "Aucune pièce jointe";
+  // Fonction pour traiter les pièces jointes filtrées
+  function processRelevantAttachments(attachmentContents) {
+    if (!attachmentContents || attachmentContents.length === 0) {
+      return "Aucune pièce jointe PDF ou DOCX";
     }
 
-    return attachments
+    return attachmentContents
       .map((att) => {
-        return `- ${att.name} (${att.contentType || "type inconnu"}, ${att.size || "taille inconnue"} octets)`;
+        let info = `- ${att.name} (${att.type})`;
+        if (att.size) {
+          info += ` - ${Math.round(att.size / 1024)} KB`;
+        }
+        if (att.content && att.content !== "[Document présent]") {
+          info += `\n  Contenu: ${att.content}`;
+        }
+        return info;
       })
       .join("\n");
+  }
+
+  // Fonction pour créer un contexte de conversation complet
+  function buildConversationContext(emailContents) {
+    let context = "=== CONTEXTE DE LA CONVERSATION COMPLÈTE ===\n\n";
+
+    emailContents.forEach((email, index) => {
+      context += `--- Email ${index + 1} ---\n`;
+      context += `Date: ${new Date(email.receivedDateTime).toLocaleString("fr-FR")}\n`;
+      context += `De: ${email.senderName} (${email.sender})\n`;
+      context += `Objet: ${email.subject}\n\n`;
+
+      // Nettoyer le contenu HTML basique
+      let cleanBody = email.body
+        .replace(/<[^>]*>/g, " ")
+        .replace(/\s+/g, " ")
+        .trim();
+
+      context += `Contenu:\n${cleanBody}\n\n`;
+
+      // Ajouter les informations sur les pièces jointes pertinentes
+      if (email.attachmentContents && email.attachmentContents.length > 0) {
+        context += `Pièces jointes (PDF/DOCX):\n`;
+        context += processRelevantAttachments(email.attachmentContents);
+        context += "\n\n";
+      }
+
+      context += "---\n\n";
+    });
+
+    return context;
   }
 
   function getConfig() {
@@ -212,7 +431,7 @@ const GraphHelper = require("../helpers/graphHelper.js").default;
         },
       ],
       temperature: 0.7,
-      max_tokens: 1024,
+      max_tokens: 4096,
     };
 
     $.ajax({
@@ -432,35 +651,28 @@ const GraphHelper = require("../helpers/graphHelper.js").default;
             return;
           }
 
-          // Créer un prompt enrichi avec les informations sur les pièces jointes
-          const fullPrompt = `
-            Je regarde une conversation avec les détails suivants:
+          // Créer le contexte complet de la conversation
+          const conversationContext = buildConversationContext(emailContents);
 
-            ${emailContents
-              .map(
-                (emailContent, index) => `
-                Email ${index + 1}:
-                Objet: ${emailContent.subject}
-                De: ${emailContent.senderName} (${emailContent.sender})
-                Date: ${emailContent.receivedDateTime}
+          // Créer un prompt enrichi avec le contexte complet
+          const fullPrompt = `${conversationContext}
 
-                Contenu:
-                ${emailContent.body}
+=== VOTRE QUESTION ===
+${prompt}
 
-                Pièces jointes:
-                ${processAttachments(emailContent.attachments)}
-              `
-              )
-              .join("\n\n")}
+=== INSTRUCTIONS ===
+Veuillez analyser l'ensemble de cette conversation email en tenant compte de tous les messages et des pièces jointes PDF/DOCX mentionnées. 
 
-            ${prompt}
+Répondez à ma question en vous basant sur le contexte complet de la conversation et des documents joints.
 
-            En plus de répondre à ma question, pourriez-vous également suggérer un objet approprié pour ma réponse? Présentez-le sous la forme "Objet suggéré: [votre suggestion d'objet]" à la fin de votre réponse.
+En plus de répondre à ma question, pourriez-vous également suggérer un objet approprié pour ma réponse? Présentez-le sous la forme "Objet suggéré: [votre suggestion d'objet]" à la fin de votre réponse.
 
-            Veuillez répondre en français.
-          `;
+Veuillez répondre en français et de manière professionnelle.`;
 
-          console.log("Appel de l'API Mistral...");
+          console.log("Appel de l'API Mistral avec le contexte complet...");
+          logMessage(
+            `Sending ${emailContents.length} emails and ${emailContents.reduce((total, email) => total + (email.attachmentContents?.length || 0), 0)} relevant attachments to AI`
+          );
 
           callMistralAPI(config.mistralApiKey, fullPrompt, (response, error) => {
             $("#ai-loading").hide();
