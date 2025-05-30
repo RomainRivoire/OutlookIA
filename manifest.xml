@@ -9,13 +9,6 @@
   <IconUrl DefaultValue="https://localhost:3000/assets/icon-64.png"/>
   <HighResolutionIconUrl DefaultValue="https://localhost:3000/assets/icon-128.png"/>
   <SupportUrl DefaultValue="https://www.contoso.com/help"/>
-  <WebApplicationInfo>
-  <Id>c4168176-c3b7-4c26-b9a7-ee28cc22faf3</Id>
-  <Resource>https://graph.microsoft.com</Resource>
-  <Scopes>
-  <Scope>Mail.Read</Scope>
-    <Scope>Mail.ReadWrite</Scope>
-  </WebApplicationInfo>
   <AppDomains>
     <AppDomain>https://www.contoso.com</AppDomain>
   </AppDomains>

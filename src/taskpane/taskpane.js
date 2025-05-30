@@ -1,5 +1,7 @@
 /* eslint-disable office-addins/no-office-initialize */
 /* eslint-disable no-undef */
+const GraphHelper = require("../helpers/graphHelper.js").default;
+
 (() => {
   /* global Office */
   /* global $ */
@@ -7,90 +9,157 @@
   let config;
   let aiResponse = "";
   let generatedSubject = "";
-  let lastInsertedResponse = ""; // Pour suivre la dernière réponse insérée
+  let lastInsertedResponse = "";
   const qaHistory = [];
+  const graphHelper = new GraphHelper();
+
   // Function to log messages
   function logMessage(message) {
-    console.log(message); // Log to console
-    // Optionally, log to a specific area in the task pane
+    console.log(message);
     $("#log-area").append(`<div>${new Date().toISOString()}: ${message}</div>`);
   }
 
-  // Function to get email content with logging
-  function getEmailContent(callback) {
+  async function getEmailContent(callback) {
     try {
       logMessage("Getting email content...");
       const item = Office.context.mailbox.item;
       const conversationId = item.conversationId;
 
-      logMessage("REST URL:", Office.context.mailbox.restUrl);
+      logMessage(`Conversation ID: ${conversationId}`);
 
-      logMessage("Exchange REST disponible ? " + (Office.context.mailbox.restUrl ? "Oui" : "Non"));
+      // Use await to get the access token
+      logMessage("test");
 
-      logMessage(`REST URL réelle: ${Office.context.mailbox.restUrl}`);
-      logMessage(`EWS URL: ${Office.context.mailbox.ewsUrl}`);
+      const access_Token = await graphHelper.getAccessToken();
+      logMessage("token : " + access_Token);
 
-      Office.context.mailbox.getCallbackTokenAsync(
-        {
-          forceConsent: false,
-          isRest: true,
-          scopes: ["mail.read"],
-          diagnostics: {
-            traceFlags: 63, // Niveau de trace maximal
-            customData: JSON.stringify({
-              clientVersion: Office.context.diagnostics.version,
-              mailboxType: Office.context.mailbox.diagnostics.mailboxType,
-            }),
-          },
-        },
-        function (result) {
-          logMessage("Call graph :" + result.status);
-          if (result.status === Office.AsyncResultStatus.Failed) {
-            logMessage(`Error code: ${result.error.code}, Name: ${result.error.name}`);
-            logMessage("Diagnostics complets:" + result.error.httpStatus);
-          }
-
-          if (result.status === Office.AsyncResultStatus.Succeeded) {
-            const accessToken = result.value;
-            logMessage("Access token retrieved successfully.");
-
-            $.ajax({
-              url: `https://graph.microsoft.com/v2.0/me/messages?$filter=conversationId eq '${conversationId}'`,
-              type: "GET",
-              headers: {
-                Authorization: `Bearer ${accessToken}`,
-              },
-            })
-              .done(function (response) {
-                if (response.value && response.value.length > 0) {
-                  const emails = response.value;
-                  const emailContents = emails.map((email) => ({
-                    subject: email.subject || "",
-                    sender: email.from ? email.from.emailAddress.address : "Inconnu",
-                    body: email.body.content,
-                  }));
-
-                  logMessage("Email content retrieved successfully.");
-                  callback(emailContents);
-                } else {
-                  logMessage("No conversation history found.");
-                  callback(null, "Aucun historique de conversation trouvé");
-                }
-              })
-              .fail(function (error) {
-                logMessage("Error retrieving conversation history: " + error.message);
-                callback(null, "Erreur lors de la récupération de l'historique de conversation: " + error.message);
-              });
-          } else {
-            logMessage("Error retrieving access token: " + result.error.message);
-            callback(null, "Erreur lors de la récupération du token d'accès: " + result.error.message);
-          }
-        }
-      );
+      // Essayer d'abord avec l'API REST moderne
+      tryRestAPIAccess(conversationId, callback);
     } catch (e) {
       logMessage("Error accessing email: " + e.message);
       callback(null, "Erreur lors de l'accès à l'email: " + e.message);
     }
+  }
+
+  // Fonction pour essayer l'accès via REST API
+  async function tryRestAPIAccess(conversationId, callback) {
+    try {
+      const accessToken = await graphHelper.getAccessToken();
+      logMessage("REST token retrieved successfully");
+
+      // Appeler Microsoft Graph API
+      callGraphAPI(conversationId, accessToken, callback);
+    } catch (error) {
+      logMessage(`REST token error: ${error.message}`);
+
+      // Fallback: utiliser seulement l'email courant
+      getCurrentEmailOnly(callback);
+    }
+  }
+
+  // Fonction pour appeler Microsoft Graph API
+  function callGraphAPI(conversationId, accessToken, callback) {
+    const graphUrl = `https://graph.microsoft.com/v1.0/me/messages?$filter=conversationId eq '${conversationId}'&$expand=attachments&$select=id,subject,from,body,receivedDateTime,attachments`;
+
+    logMessage(`Calling Graph API: ${graphUrl}`);
+
+    $.ajax({
+      url: graphUrl,
+      type: "GET",
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        "Content-Type": "application/json",
+      },
+      timeout: 30000,
+    })
+      .done(function (response) {
+        logMessage("Graph API call successful");
+
+        if (response.value && response.value.length > 0) {
+          const emails = response.value;
+          const emailContents = emails.map((email) => ({
+            id: email.id,
+            subject: email.subject || "Sans objet",
+            sender: email.from ? email.from.emailAddress.address : "Expéditeur inconnu",
+            senderName: email.from ? email.from.emailAddress.name : "Nom inconnu",
+            body: email.body.content || "",
+            bodyType: email.body.contentType || "text",
+            receivedDateTime: email.receivedDateTime,
+            attachments: email.attachments || [],
+          }));
+
+          logMessage(`Retrieved ${emailContents.length} emails from conversation`);
+
+          // Log des pièces jointes trouvées
+          emailContents.forEach((email, index) => {
+            if (email.attachments.length > 0) {
+              logMessage(`Email ${index + 1} has ${email.attachments.length} attachments`);
+              email.attachments.forEach((att) => {
+                logMessage(`- Attachment: ${att.name} (${att.contentType})`);
+              });
+            }
+          });
+
+          callback(emailContents);
+        } else {
+          logMessage("No emails found in conversation");
+          callback(null, "Aucun email trouvé dans cette conversation");
+        }
+      })
+      .fail(function (xhr, status, error) {
+        logMessage(`Graph API error: ${status} - ${error}`);
+        logMessage(`Response: ${xhr.responseText}`);
+
+        // Fallback: utiliser seulement l'email courant
+        getCurrentEmailOnly(callback);
+      });
+  }
+
+  // Fonction de fallback : récupérer seulement l'email courant
+  function getCurrentEmailOnly(callback) {
+    logMessage("Using current email only as fallback...");
+
+    try {
+      const item = Office.context.mailbox.item;
+
+      // Récupérer le corps de l'email courant
+      item.body.getAsync(Office.CoercionType.Html, function (result) {
+        if (result.status === Office.AsyncResultStatus.Succeeded) {
+          const emailContent = [
+            {
+              id: item.itemId || "current",
+              subject: item.subject || "Sans objet",
+              sender: item.from ? item.from.emailAddress : "Expéditeur inconnu",
+              senderName: item.from ? item.from.displayName : "Nom inconnu",
+              body: result.value,
+              bodyType: "html",
+              receivedDateTime: item.dateTimeCreated ? item.dateTimeCreated.toISOString() : new Date().toISOString(),
+              attachments: item.attachments || [],
+            },
+          ];
+
+          logMessage("Current email content retrieved successfully");
+          callback(emailContent);
+        } else {
+          callback(null, "Impossible de récupérer le contenu de l'email courant");
+        }
+      });
+    } catch (e) {
+      callback(null, `Erreur lors de la récupération de l'email courant: ${e.message}`);
+    }
+  }
+
+  // Fonction pour traiter les pièces jointes
+  function processAttachments(attachments) {
+    if (!attachments || attachments.length === 0) {
+      return "Aucune pièce jointe";
+    }
+
+    return attachments
+      .map((att) => {
+        return `- ${att.name} (${att.contentType || "type inconnu"}, ${att.size || "taille inconnue"} octets)`;
+      })
+      .join("\n");
   }
 
   function getConfig() {
@@ -170,9 +239,7 @@
     $("#error-display").show();
   }
 
-  // Fonction pour extraire l'objet généré de la réponse
   function extractSubject(response) {
-    // Recherche d'un objet suggéré dans la réponse
     const subjectPatterns = [
       /Objet suggéré\s*:\s*"([^"]+)"/i,
       /Objet suggéré\s*:\s*(.+?)(?:\n|$)/i,
@@ -191,13 +258,10 @@
       }
     }
 
-    // Si aucun objet n'est trouvé, générer un objet par défaut
     return "Réponse générée par IA";
   }
 
-  // Fonction pour nettoyer la réponse avant insertion (supprimer l'objet suggéré)
   function cleanResponseForInsertion(response) {
-    // Supprimer les lignes contenant des suggestions d'objet
     let cleanedResponse = response
       .replace(/Objet suggéré\s*:.*(\n|$)/gi, "")
       .replace(/Sujet suggéré\s*:.*(\n|$)/gi, "")
@@ -205,7 +269,6 @@
       .replace(/Sujet\s*:.*(\n|$)/gi, "")
       .trim();
 
-    // Supprimer les formules d'introduction courantes
     cleanedResponse = cleanedResponse
       .replace(
         /^(Bien sûr|Voici|Certainement|Avec plaisir|D'accord|Bonjour|Salut|Je serais ravi)[,.]?\s*(voici|je vous propose|vous trouverez ci-dessous)?\s*(une réponse possible|une réponse|un exemple de réponse|ma réponse)[^:]*:/i,
@@ -216,13 +279,11 @@
       .replace(/^Voici ce que vous pourriez répondre[^:]*:/i, "")
       .trim();
 
-    // Supprimer les marqueurs de formatage
     cleanedResponse = cleanedResponse
-      .replace(/^-{3,}$/gm, "") // Supprime les lignes contenant uniquement des tirets (---)
-      .replace(/^\*{3,}$/gm, "") // Supprime les lignes contenant uniquement des astérisques (***)
+      .replace(/^-{3,}$/gm, "")
+      .replace(/^\*{3,}$/gm, "")
       .trim();
 
-    // Supprimer les placeholders courants
     cleanedResponse = cleanedResponse
       .replace(/\[Votre Nom\]/gi, "")
       .replace(/\[Votre Signature\]/gi, "")
@@ -231,20 +292,13 @@
       .replace(/\[Signature\]/gi, "")
       .trim();
 
-    // Améliorer le formatage des sauts de ligne
-    cleanedResponse = cleanedResponse
-      .replace(/\n{3,}/g, "\n\n") // Remplace 3+ sauts de ligne par 2
-      .replace(/^\s+|\s+$/gm, ""); // Supprime les espaces en début et fin de ligne
+    cleanedResponse = cleanedResponse.replace(/\n{3,}/g, "\n\n").replace(/^\s+|\s+$/gm, "");
 
-    // Assurer que les paragraphes sont bien séparés pour Outlook
-    cleanedResponse = cleanedResponse
-      .replace(/\n/g, "\r\n") // Utiliser le format Windows pour les sauts de ligne
-      .replace(/([.!?])\s*\r\n/g, "$1\r\n\r\n"); // Ajouter un saut de ligne supplémentaire après les fins de phrase suivies d'un saut de ligne
+    cleanedResponse = cleanedResponse.replace(/\n/g, "\r\n").replace(/([.!?])\s*\r\n/g, "$1\r\n\r\n");
 
     return cleanedResponse;
   }
 
-  // Fonction pour définir l'objet du mail
   function setEmailSubject(subject) {
     try {
       Office.context.mailbox.item.subject.setAsync(subject, (result) => {
@@ -257,10 +311,8 @@
     }
   }
 
-  // Fonction pour remplacer la dernière insertion ou insérer une nouvelle réponse
   function replaceOrInsertResponse(newResponse) {
     try {
-      // Récupérer le contenu actuel du mail
       Office.context.mailbox.item.body.getAsync(Office.CoercionType.Text, (result) => {
         if (result.status !== Office.AsyncResultStatus.Succeeded) {
           showError(
@@ -271,9 +323,7 @@
 
         const currentBody = result.value;
 
-        // Si nous avons une dernière insertion et qu'elle est présente dans le corps du mail
         if (lastInsertedResponse && currentBody.includes(lastInsertedResponse)) {
-          // Remplacer la dernière insertion par la nouvelle
           const updatedBody = currentBody.replace(lastInsertedResponse, newResponse);
 
           Office.context.mailbox.item.body.setAsync(
@@ -287,12 +337,10 @@
                 return;
               }
 
-              // Mettre à jour la référence à la dernière insertion
               lastInsertedResponse = newResponse;
             }
           );
         } else {
-          // Si pas de dernière insertion ou si elle n'est plus présente, insérer à la position actuelle
           Office.context.mailbox.item.body.setSelectedDataAsync(
             newResponse,
             { coercionType: Office.CoercionType.Text },
@@ -304,7 +352,6 @@
                 return;
               }
 
-              // Mettre à jour la référence à la dernière insertion
               lastInsertedResponse = newResponse;
             }
           );
@@ -315,21 +362,15 @@
     }
   }
 
-  // Nouvelle fonction pour ajouter une paire question/réponse à l'historique
   function addToQAHistory(question, response) {
-    // Ajouter à la fin du tableau pour garder la dernière question en bas (comme WhatsApp)
     qaHistory.push({ question, response });
-
-    // Mettre à jour l'affichage
     updateQAHistoryDisplay();
   }
 
-  // Nouvelle fonction pour mettre à jour l'affichage de l'historique
   function updateQAHistoryDisplay() {
     const $qaHistory = $("#qa-history");
     $qaHistory.empty();
 
-    // Parcourir l'historique et créer les éléments HTML
     qaHistory.forEach((item) => {
       const $qaItem = $(`
         <div class="qa-item">
@@ -347,23 +388,18 @@
       $qaHistory.append($qaItem);
     });
 
-    // Faire défiler vers le bas pour voir la dernière question/réponse
     $(".conversation-container").scrollTop($(".conversation-container")[0].scrollHeight);
   }
 
   Office.initialize = (reason) => {
     $(document).ready(() => {
-      // Load config
       config = getConfig();
 
-      // Vérifier si la clé API est déjà configurée
       if (!config || !config.mistralApiKey) {
-        // Si la clé n'est pas configurée, afficher un message d'erreur
         showError("Clé API Mistral non configurée. Veuillez contacter votre administrateur.");
         return;
       }
 
-      // When AI submit button is clicked
       $("#ai-submit").on("click", () => {
         const prompt = $("#ai-prompt").val().trim();
         if (!prompt) {
@@ -371,16 +407,10 @@
           return;
         }
 
-        // Hide any previous errors
         $("#error-display").hide();
-
-        // Hide action buttons
         $("#action-buttons").hide();
-
-        // Show loading spinner
         $("#ai-loading").show();
 
-        // Get email content
         getEmailContent((emailContents, error) => {
           if (error) {
             $("#ai-loading").hide();
@@ -388,7 +418,7 @@
             return;
           }
 
-          // Create a prompt with email context and ask for a subject
+          // Créer un prompt enrichi avec les informations sur les pièces jointes
           const fullPrompt = `
             Je regarde une conversation avec les détails suivants:
 
@@ -397,10 +427,14 @@
                 (emailContent, index) => `
                 Email ${index + 1}:
                 Objet: ${emailContent.subject}
-                De: ${emailContent.sender}
+                De: ${emailContent.senderName} (${emailContent.sender})
+                Date: ${emailContent.receivedDateTime}
 
                 Contenu:
                 ${emailContent.body}
+
+                Pièces jointes:
+                ${processAttachments(emailContent.attachments)}
               `
               )
               .join("\n\n")}
@@ -414,7 +448,6 @@
 
           console.log("Appel de l'API Mistral...");
 
-          // Call Mistral API
           callMistralAPI(config.mistralApiKey, fullPrompt, (response, error) => {
             $("#ai-loading").hide();
 
@@ -425,20 +458,12 @@
 
             console.log("Réponse reçue de l'API Mistral");
 
-            // Sauvegarder la réponse complète
             aiResponse = response;
-
-            // Extraire et sauvegarder l'objet suggéré
             generatedSubject = extractSubject(response);
             console.log("Objet généré:", generatedSubject);
 
-            // Ajouter la question et la réponse à l'historique
             addToQAHistory(prompt, response);
-
-            // Vider la zone de prompt
             $("#ai-prompt").val("");
-
-            // Afficher les boutons d'action
             $("#action-buttons").show();
           });
         });
@@ -446,9 +471,7 @@
 
       $("#insert-ai-response").on("click", () => {
         if (aiResponse) {
-          // Nettoyer la réponse avant insertion
           const cleanedResponse = cleanResponseForInsertion(aiResponse);
-
           replaceOrInsertResponse(cleanedResponse);
         }
       });
