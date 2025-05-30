@@ -33,7 +33,7 @@ const GraphHelper = require("../helpers/graphHelper.js").default;
       const access_Token = await graphHelper.getAccessToken();
       logMessage("token : " + access_Token);
 
-      // Essayer d'abord avec l'API REST moderne
+      // Essayer d'abord avec l'API REST
       tryRestAPIAccess(conversationId, callback);
     } catch (e) {
       logMessage("Error accessing email: " + e.message);
@@ -45,74 +45,88 @@ const GraphHelper = require("../helpers/graphHelper.js").default;
   async function tryRestAPIAccess(conversationId, callback) {
     try {
       const accessToken = await graphHelper.getAccessToken();
-      logMessage("REST token retrieved successfully");
-
-      // Appeler Microsoft Graph API
       callGraphAPI(conversationId, accessToken, callback);
     } catch (error) {
       logMessage(`REST token error: ${error.message}`);
-
       // Fallback: utiliser seulement l'email courant
       getCurrentEmailOnly(callback);
     }
   }
 
   // Fonction pour appeler Microsoft Graph API
-  function callGraphAPI(conversationId, accessToken, callback) {
-    const graphUrl = `https://graph.microsoft.com/v1.0/me/messages?$filter=conversationId eq '${conversationId}'&$expand=attachments&$select=id,subject,from,body,receivedDateTime,attachments`;
+  async function callGraphAPI(conversationId, accessToken, callback) {
+    const userEmail = Office.context.mailbox.userProfile.emailAddress;
+
+    if (!userEmail) {
+      logMessage("Unable to get user email from Office context");
+      getCurrentEmailOnly(callback);
+      return;
+    }
+
+    logMessage(`Using user email: ${userEmail}`);
+
+    const graphUrl = `https://graph.microsoft.com/v1.0/users/${encodeURIComponent(
+      userEmail
+    )}/messages?$filter=conversationId eq '${encodeURIComponent(
+      conversationId
+    )}'&$expand=attachments&$select=id,subject,from,body,receivedDateTime,attachments`;
 
     logMessage(`Calling Graph API: ${graphUrl}`);
 
-    $.ajax({
-      url: graphUrl,
-      type: "GET",
-      headers: {
-        Authorization: `Bearer ${accessToken}`,
-        "Content-Type": "application/json",
-      },
-      timeout: 30000,
-    })
-      .done(function (response) {
-        logMessage("Graph API call successful");
-
-        if (response.value && response.value.length > 0) {
-          const emails = response.value;
-          const emailContents = emails.map((email) => ({
-            id: email.id,
-            subject: email.subject || "Sans objet",
-            sender: email.from ? email.from.emailAddress.address : "Expéditeur inconnu",
-            senderName: email.from ? email.from.emailAddress.name : "Nom inconnu",
-            body: email.body.content || "",
-            bodyType: email.body.contentType || "text",
-            receivedDateTime: email.receivedDateTime,
-            attachments: email.attachments || [],
-          }));
-
-          logMessage(`Retrieved ${emailContents.length} emails from conversation`);
-
-          // Log des pièces jointes trouvées
-          emailContents.forEach((email, index) => {
-            if (email.attachments.length > 0) {
-              logMessage(`Email ${index + 1} has ${email.attachments.length} attachments`);
-              email.attachments.forEach((att) => {
-                logMessage(`- Attachment: ${att.name} (${att.contentType})`);
-              });
-            }
-          });
-
-          callback(emailContents);
-        } else {
-          logMessage("No emails found in conversation");
-          callback(null, "Aucun email trouvé dans cette conversation");
-        }
-      })
-      .fail(function (xhr, status, error) {
-        logMessage(`Graph API error: ${status} - ${error}`);
-        logMessage(`Response: ${xhr.responseText}`);
-
-        // Fallback: utiliser seulement l'email courant
-        getCurrentEmailOnly(callback);
+    try {
+      const response = await fetch(graphUrl, {
+        method: "GET",
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+          "Content-Type": "application/json",
+        },
       });
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        logMessage(`Graph API error: ${response.status} - ${response.statusText}`);
+        logMessage(`Response: ${errorText}`);
+        getCurrentEmailOnly(callback);
+        return;
+      }
+
+      const data = await response.json();
+      logMessage("Graph API call successful");
+
+      if (data.value && data.value.length > 0) {
+        const emails = data.value;
+        const emailContents = emails.map((email) => ({
+          id: email.id,
+          subject: email.subject || "Sans objet",
+          sender: email.from ? email.from.emailAddress.address : "Expéditeur inconnu",
+          senderName: email.from ? email.from.emailAddress.name : "Nom inconnu",
+          body: email.body.content || "",
+          bodyType: email.body.contentType || "text",
+          receivedDateTime: email.receivedDateTime,
+          attachments: email.attachments || [],
+        }));
+
+        logMessage(`Retrieved ${emailContents.length} emails from conversation`);
+
+        // Log des pièces jointes trouvées
+        emailContents.forEach((email, index) => {
+          if (email.attachments.length > 0) {
+            logMessage(`Email ${index + 1} has ${email.attachments.length} attachments`);
+            email.attachments.forEach((att) => {
+              logMessage(`- Attachment: ${att.name} (${att.contentType})`);
+            });
+          }
+        });
+
+        callback(emailContents);
+      } else {
+        logMessage("No emails found in conversation");
+        callback(null, "Aucun email trouvé dans cette conversation");
+      }
+    } catch (error) {
+      logMessage(`Error in Graph API call: ${error.message}`);
+      getCurrentEmailOnly(callback);
+    }
   }
 
   // Fonction de fallback : récupérer seulement l'email courant
