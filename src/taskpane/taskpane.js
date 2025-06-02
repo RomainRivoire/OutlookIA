@@ -453,19 +453,11 @@ const GraphHelper = require("../helpers/graphHelper.js").default;
     }
   }
 
-  function callMistralAPI(apiKey, prompt, callback) {
-    const requestUrl = "https://api.mistral.ai/v1/chat/completions";
+  function callMistralAPI(prompt, callback) {
+    const requestUrl = "http://localhost:3001/api/callMistralAI";
 
     const requestData = {
-      model: "mistral-small-latest",
-      messages: [
-        {
-          role: "user",
-          content: prompt,
-        },
-      ],
-      temperature: 0.7,
-      max_tokens: 4096,
+      prompt: prompt,
     };
 
     $.ajax({
@@ -473,26 +465,23 @@ const GraphHelper = require("../helpers/graphHelper.js").default;
       type: "POST",
       dataType: "json",
       contentType: "application/json",
-      headers: {
-        Authorization: "Bearer " + apiKey,
-      },
       data: JSON.stringify(requestData),
     })
       .done((response) => {
         if (response && response.choices && response.choices.length > 0) {
           callback(response.choices[0].message.content);
         } else {
-          callback(null, "Réponse invalide de l'API Mistral");
+          callback(null, "Invalid response from Mistral API");
         }
       })
       .fail((error) => {
-        console.error("Erreur API Mistral:", error);
-        let errorMessage = "Erreur lors de l'appel à l'API Mistral";
+        logMessage("Error calling Mistral API:", error);
+        let errorMessage = "Error calling Mistral API";
 
-        if (error.status === 401) {
-          errorMessage = "Clé API invalide. Veuillez vérifier votre clé API Mistral.";
+        if (error.status === 500) {
+          errorMessage = "Server error: " + (error.responseJSON?.error || "Unknown error");
         } else if (error.responseJSON && error.responseJSON.error) {
-          errorMessage += ": " + error.responseJSON.error.message;
+          errorMessage += ": " + error.responseJSON.error;
         } else if (error.statusText) {
           errorMessage += ": " + error.statusText;
         }
@@ -724,7 +713,7 @@ Veuillez répondre en français et de manière professionnelle. Respectez impér
             `Sending ${emailContents.length} emails and ${emailContents.reduce((total, email) => total + (email.attachmentContents?.length || 0), 0)} relevant attachments to AI`
           );
 
-          callMistralAPI(config.mistralApiKey, fullPrompt, (response, error) => {
+          callMistralAPI(fullPrompt, (response, error) => {
             $("#ai-loading").hide();
 
             if (error) {

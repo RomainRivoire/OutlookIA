@@ -4,7 +4,6 @@ class GraphHelper {
   constructor() {
     this._tokenPromise = null;
     this._tokenExpiration = null;
-    this.delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
   }
 
   /**
