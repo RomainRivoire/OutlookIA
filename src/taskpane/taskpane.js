@@ -8,7 +8,9 @@ const GraphHelper = require("../helpers/graphHelper.js").default;
 
   let config;
   let aiResponse = "";
-  let generatedSubject = "";
+  let analysisSection = "";
+  let bodySection = "";
+  let subjectSection = "";
   let lastInsertedResponse = "";
   const qaHistory = [];
   const graphHelper = new GraphHelper();
@@ -19,6 +21,58 @@ const GraphHelper = require("../helpers/graphHelper.js").default;
     $("#log-area").append(`<div>${new Date().toISOString()}: ${message}</div>`);
   }
 
+  // Fonction pour logger le prompt complet
+  function logPrompt(prompt) {
+    logMessage("=== PROMPT ENVOYÉ À L'IA ===");
+    logMessage(prompt);
+    logMessage("=== FIN DU PROMPT ===");
+  }
+
+  // Fonction pour parser la réponse structurée de l'IA
+  function parseStructuredResponse(response) {
+    const sections = {
+      analysis: "",
+      body: "",
+      subject: "",
+    };
+
+    // Patterns pour identifier les sections
+    const analysisMatch = response.match(/=== ANALYSE ===\s*([\s\S]*?)(?=\s*=== CORPS DU MAIL ===|$)/i);
+    const bodyMatch = response.match(/=== CORPS DU MAIL ===\s*([\s\S]*?)(?=\s*=== OBJET ===|$)/i);
+    const subjectMatch = response.match(/=== OBJET ===\s*([\s\S]*?)$/i);
+
+    if (analysisMatch) {
+      sections.analysis = analysisMatch[1].trim();
+      logMessage("Section Analyse trouvée");
+    } else {
+      logMessage("Section Analyse non trouvée dans la réponse");
+    }
+
+    if (bodyMatch) {
+      sections.body = bodyMatch[1].trim();
+      logMessage("Section Corps du mail trouvée");
+    } else {
+      logMessage("Section Corps du mail non trouvée dans la réponse");
+    }
+
+    if (subjectMatch) {
+      sections.subject = subjectMatch[1].trim();
+      logMessage("Section Objet trouvée");
+    } else {
+      logMessage("Section Objet non trouvée dans la réponse");
+    }
+
+    // Fallback : si les sections ne sont pas trouvées, essayer l'ancien format
+    if (!sections.analysis && !sections.body && !sections.subject) {
+      logMessage("Format structuré non détecté, utilisation de l'ancien parsing...");
+      sections.subject = extractSubject(response);
+      sections.body = cleanResponseForInsertion(response);
+      sections.analysis = "Réponse non structurée";
+    }
+
+    return sections;
+  }
+
   async function getEmailContent(callback) {
     try {
       logMessage("Getting email content...");
@@ -26,12 +80,6 @@ const GraphHelper = require("../helpers/graphHelper.js").default;
       const conversationId = item.conversationId;
 
       logMessage(`Conversation ID: ${conversationId}`);
-
-      // Use await to get the access token
-      logMessage("test");
-
-      const access_Token = await graphHelper.getAccessToken();
-      logMessage("token : " + access_Token);
 
       // Essayer d'abord avec l'API REST
       tryRestAPIAccess(conversationId, callback);
@@ -523,6 +571,8 @@ const GraphHelper = require("../helpers/graphHelper.js").default;
       Office.context.mailbox.item.subject.setAsync(subject, (result) => {
         if (result.status !== Office.AsyncResultStatus.Succeeded) {
           showError("Impossible de définir l'objet: " + (result.error ? result.error.message : "Erreur inconnue"));
+        } else {
+          logMessage(`Objet défini: ${subject}`);
         }
       });
     } catch (e) {
@@ -557,6 +607,7 @@ const GraphHelper = require("../helpers/graphHelper.js").default;
               }
 
               lastInsertedResponse = newResponse;
+              logMessage("Réponse mise à jour dans le mail");
             }
           );
         } else {
@@ -572,6 +623,7 @@ const GraphHelper = require("../helpers/graphHelper.js").default;
               }
 
               lastInsertedResponse = newResponse;
+              logMessage("Réponse insérée dans le mail");
             }
           );
         }
@@ -640,7 +692,7 @@ const GraphHelper = require("../helpers/graphHelper.js").default;
           // Créer le contexte complet de la conversation
           const conversationContext = buildConversationContext(emailContents);
 
-          // Créer un prompt enrichi avec le contexte complet
+          // Créer un prompt enrichi avec le contexte complet et les instructions structurées
           const fullPrompt = `${conversationContext}
 
 === VOTRE QUESTION ===
@@ -651,9 +703,21 @@ Veuillez analyser l'ensemble de cette conversation email en tenant compte de tou
 
 Répondez à ma question en vous basant sur le contexte complet de la conversation et des documents joints.
 
-En plus de répondre à ma question, pourriez-vous également suggérer un objet approprié pour ma réponse? Présentez-le sous la forme "Objet suggéré: [votre suggestion d'objet]" à la fin de votre réponse.
+IMPORTANT: Structurez votre réponse EXACTEMENT selon ce format:
 
-Veuillez répondre en français et de manière professionnelle.`;
+=== ANALYSE ===
+[Votre analyse de la situation, du contexte, des points clés à retenir, etc.]
+
+=== CORPS DU MAIL ===
+[Le contenu de la réponse email à insérer directement dans le mail, prêt à envoyer, sans formules de politesse d'introduction comme "Voici ma réponse"]
+
+=== OBJET ===
+[Un objet approprié pour l'email de réponse, sans guillemets ni préfixe]
+
+Veuillez répondre en français et de manière professionnelle. Respectez impérativement cette structure avec ces balises exactes.`;
+
+          // Logger le prompt complet
+          logPrompt(fullPrompt);
 
           console.log("Appel de l'API Mistral avec le contexte complet...");
           logMessage(
@@ -670,9 +734,18 @@ Veuillez répondre en français et de manière professionnelle.`;
 
             console.log("Réponse reçue de l'API Mistral");
 
+            // Parser la réponse structurée
+            const sections = parseStructuredResponse(response);
+
             aiResponse = response;
-            generatedSubject = extractSubject(response);
-            console.log("Objet généré:", generatedSubject);
+            analysisSection = sections.analysis;
+            bodySection = sections.body;
+            subjectSection = sections.subject;
+
+            console.log("Sections parsées:");
+            console.log("- Analyse:", analysisSection ? "✓" : "✗");
+            console.log("- Corps:", bodySection ? "✓" : "✗");
+            console.log("- Objet:", subjectSection ? "✓" : "✗");
 
             addToQAHistory(prompt, response);
             $("#ai-prompt").val("");
@@ -682,14 +755,23 @@ Veuillez répondre en français et de manière professionnelle.`;
       });
 
       $("#insert-ai-response").on("click", () => {
-        if (aiResponse) {
+        if (bodySection) {
+          const cleanedResponse = cleanResponseForInsertion(bodySection);
+          replaceOrInsertResponse(cleanedResponse);
+        } else if (aiResponse) {
+          // Fallback vers l'ancienne méthode si la section corps n'est pas trouvée
           const cleanedResponse = cleanResponseForInsertion(aiResponse);
           replaceOrInsertResponse(cleanedResponse);
+        } else {
+          showError("Aucune réponse à insérer");
         }
       });
 
       $("#insert-subject").on("click", () => {
-        if (generatedSubject) {
+        if (subjectSection) {
+          setEmailSubject(subjectSection);
+        } else if (generatedSubject) {
+          // Fallback vers l'ancienne méthode
           setEmailSubject(generatedSubject);
         } else {
           showError("Aucun objet n'a été généré");
