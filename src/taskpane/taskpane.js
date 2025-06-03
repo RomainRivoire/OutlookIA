@@ -14,6 +14,7 @@ const GraphHelper = require("../helpers/graphHelper.js").default;
   let lastInsertedResponse = "";
   const qaHistory = [];
   const graphHelper = new GraphHelper();
+  const MAX_EMAILS_DEPTH = 5; // Limite le nombre d'emails à traiter
 
   // Function to log messages
   function logMessage(message) {
@@ -326,13 +327,21 @@ const GraphHelper = require("../helpers/graphHelper.js").default;
         });
       }
 
-      // Trier les emails par date (plus ancien en premier)
-      emailContents.sort((a, b) => new Date(a.receivedDateTime) - new Date(b.receivedDateTime));
+      // Trier les emails par date (plus récent en premier pour prendre les N derniers)
+      emailContents.sort((a, b) => new Date(b.receivedDateTime) - new Date(a.receivedDateTime));
 
-      logMessage(`Retrieved ${emailContents.length} emails from conversation with filtered attachments`);
+      // Limiter le nombre d'emails traités
+      const limitedEmailContents = emailContents.slice(0, MAX_EMAILS_DEPTH);
+
+      // Re-trier dans l'ordre chronologique (plus ancien en premier) pour le contexte
+      limitedEmailContents.sort((a, b) => new Date(a.receivedDateTime) - new Date(b.receivedDateTime));
+
+      logMessage(
+        `Limited to ${limitedEmailContents.length} most recent emails from conversation (max: ${MAX_EMAILS_DEPTH})`
+      );
 
       // Log des pièces jointes pertinentes trouvées
-      emailContents.forEach((email, index) => {
+      limitedEmailContents.forEach((email, index) => {
         if (email.attachmentContents.length > 0) {
           logMessage(`Email ${index + 1} has ${email.attachmentContents.length} relevant attachments`);
           email.attachmentContents.forEach((att) => {
@@ -341,7 +350,7 @@ const GraphHelper = require("../helpers/graphHelper.js").default;
         }
       });
 
-      callback(emailContents);
+      callback(limitedEmailContents); // Use limitedEmailContents instead of emailContents
     } catch (error) {
       logMessage(`Error in Graph API call: ${error.message}`);
       getCurrentEmailOnly(callback);

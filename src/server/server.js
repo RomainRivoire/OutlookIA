@@ -1,3 +1,4 @@
+/* eslint-disable no-undef */
 import express, { json } from "express";
 import axios from "axios";
 import cors from "cors";
